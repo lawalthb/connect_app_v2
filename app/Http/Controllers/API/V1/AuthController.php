@@ -8,6 +8,9 @@ use App\Http\Resources\V1\UserResource;
 use App\Services\AuthService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use App\Exceptions\AuthenticationException;
+use Illuminate\Validation\ValidationException;
+use Laravel\Socialite\Facades\Socialite;
 
 class AuthController extends BaseController
 {
@@ -26,13 +29,20 @@ class AuthController extends BaseController
      */
     public function register(RegisterRequest $request)
     {
-        $user = $this->authService->register($request->validated());
-        $token = $this->authService->createToken($user);
+        try {
+            $user = $this->authService->register($request->validated());
+            $token = $this->authService->createToken($user);
 
-        return $this->sendResponse('User registered successfully', [
-            'user' => new UserResource($user),
-            'token' => $token,
-        ], 201);
+            // Send email verification OTP here if needed
+            // You can integrate with your notification system
+
+            return $this->sendResponse('User registered successfully', [
+                'user' => new UserResource($user),
+                'token' => $token,
+            ], 201);
+        } catch (\Exception $e) {
+            return $this->sendError('Registration failed: ' . $e->getMessage(), null, 500);
+        }
     }
 
     /**
@@ -43,22 +53,341 @@ class AuthController extends BaseController
      */
     public function login(LoginRequest $request)
     {
-        $user = $this->authService->attemptLogin(
-            $request->email,
-            $request->password,
-            $request->remember_me ?? false
-        );
+        try {
+            $user = $this->authService->attemptLogin(
+                $request->email,
+                $request->password,
+                $request->remember_me ?? false
+            );
 
-        if (!$user) {
-            return $this->sendError('Invalid credentials', null, 401);
+            if (!$user) {
+                return $this->sendError('Invalid credentials', null, 401);
+            }
+
+            $token = $this->authService->createToken($user, $request->remember_me ?? false);
+
+            return $this->sendResponse('Login successful', [
+                'user' => new UserResource($user),
+                'token' => $token,
+            ]);
+        } catch (AuthenticationException $e) {
+            return $this->sendError($e->getMessage(), null, $e->getCode());
+        } catch (\Exception $e) {
+            return $this->sendError('Login failed: ' . $e->getMessage(), null, 500);
+        }
+    }
+
+    /**
+     * Send forgot password OTP
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function forgotPassword(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|email|exists:users,email'
+        ]);
+
+        if ($validator->fails()) {
+            return $this->sendError('Validation Error', $validator->errors(), 422);
         }
 
-        $token = $this->authService->createToken($user, $request->remember_me ?? false);
+        try {
+            $otp = $this->authService->generatePasswordResetOTP($request->email);
 
-        return $this->sendResponse('Login successful', [
-            'user' => new UserResource($user),
-            'token' => $token,
+            if (!$otp) {
+                return $this->sendError('User not found', null, 404);
+            }
+
+            // Here you would normally send the OTP via email
+            // For example: Mail::to($request->email)->send(new ResetPasswordOTPMail($otp));
+
+            return $this->sendResponse(
+                'Password reset OTP has been sent to your email',
+                ['email' => $request->email]
+            );
+        } catch (\Exception $e) {
+            return $this->sendError('Failed to send reset OTP: ' . $e->getMessage(), null, 500);
+        }
+    }
+
+    /**
+     * Verify password reset OTP
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function verifyResetOTP(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|email|exists:users,email',
+            'otp' => 'required|string|size:4'
         ]);
+
+        if ($validator->fails()) {
+            return $this->sendError('Validation Error', $validator->errors(), 422);
+        }
+
+        $isValid = $this->authService->verifyPasswordResetOTP(
+            $request->email,
+            $request->otp
+        );
+
+        if (!$isValid) {
+            return $this->sendError('Invalid OTP', null, 400);
+        }
+
+        return $this->sendResponse('OTP verified successfully', null);
+    }
+
+    /**
+     * Reset password with OTP
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function resetPassword(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|email|exists:users,email',
+            'otp' => 'required|string|size:4',
+            'password' => 'required|string|min:8|confirmed'
+        ]);
+
+        if ($validator->fails()) {
+            return $this->sendError('Validation Error', $validator->errors(), 422);
+        }
+
+        $success = $this->authService->resetPasswordWithOTP(
+            $request->email,
+            $request->otp,
+            $request->password
+        );
+
+        if (!$success) {
+            return $this->sendError('Invalid OTP or reset token expired', null, 400);
+        }
+
+        return $this->sendResponse('Password has been reset successfully', null);
+    }
+
+    /**
+     * Verify email with OTP
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function verifyEmail(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|email|exists:users,email',
+            'otp' => 'required|string|size:4'
+        ]);
+
+        if ($validator->fails()) {
+            return $this->sendError('Validation Error', $validator->errors(), 422);
+        }
+
+        $verified = $this->authService->verifyEmail(
+            $request->email,
+            $request->otp
+        );
+
+        if (!$verified) {
+            return $this->sendError('Invalid OTP', null, 400);
+        }
+
+        return $this->sendResponse('Email verified successfully', null);
+    }
+
+    /**
+     * Resend email verification OTP
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function resendVerificationOTP(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|email|exists:users,email',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->sendError('Validation Error', $validator->errors(), 422);
+        }
+
+        try {
+            $user = \App\Models\User::where('email', $request->email)->first();
+
+            if ($user->email_verified_at) {
+                return $this->sendError('Email already verified', null, 400);
+            }
+
+            $otp = $this->authService->generateEmailVerificationOTP($user);
+
+            // Here you would normally send the OTP via email
+            // For example: Mail::to($user->email)->send(new VerificationOTPMail($otp));
+
+            return $this->sendResponse(
+                'Verification OTP has been sent to your email',
+                ['email' => $user->email]
+            );
+        } catch (\Exception $e) {
+            return $this->sendError('Failed to send verification OTP: ' . $e->getMessage(), null, 500);
+        }
+    }
+
+    /**
+     * Redirect to OAuth provider
+     *
+     * @param string $provider
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\RedirectResponse
+     */
+    public function redirectToProvider($provider)
+    {
+        $validProviders = ['google', 'facebook', 'twitter', 'apple'];
+
+        if (!in_array($provider, $validProviders)) {
+            return $this->sendError('Unsupported social provider', null, 400);
+        }
+
+        return Socialite::driver($provider)->redirect();
+    }
+
+    /**
+     * Handle provider callback
+     *
+     * @param string $provider
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\RedirectResponse
+     */
+    public function handleProviderCallback($provider)
+    {
+        try {
+            $socialUser = Socialite::driver($provider)->user();
+
+            $user = $this->authService->handleSocialLogin(
+                $provider,
+                null,
+                [
+                    'id' => $socialUser->getId(),
+                    'name' => $socialUser->getName(),
+                    'email' => $socialUser->getEmail(),
+                    'avatar' => $socialUser->getAvatar(),
+                    'username' => $socialUser->getNickname()
+                ]
+            );
+
+            $token = $this->authService->createToken($user, true);
+
+            // If API request, return JSON
+            if (request()->expectsJson()) {
+                return $this->sendResponse('Social login successful', [
+                    'user' => new UserResource($user),
+                    'token' => $token,
+                ]);
+            }
+
+            // For web flow, redirect with token
+            return redirect()->to(config('app.frontend_url') . '/auth/social-callback?token=' . $token);
+
+        } catch (\Exception $e) {
+            if (request()->expectsJson()) {
+                return $this->sendError('Social login failed: ' . $e->getMessage(), null, 500);
+            }
+
+            return redirect()->to(config('app.frontend_url') . '/auth/social-callback?error=' . urlencode($e->getMessage()));
+        }
+    }
+
+    /**
+     * Handle social login from mobile app
+     *
+     * @param Request $request
+     * @param string $provider
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function handleSocialLoginFromApp(Request $request, $provider)
+    {
+        $validator = Validator::make($request->all(), [
+            'access_token' => 'required|string',
+            'device_token' => 'nullable|string'
+        ]);
+
+        if ($validator->fails()) {
+            return $this->sendError('Validation Error', $validator->errors(), 422);
+        }
+
+        try {
+            $user = $this->authService->handleSocialLogin($provider, $request->access_token);
+
+            // Update device token if provided
+            if ($request->device_token) {
+                $user->device_token = $request->device_token;
+                $user->save();
+            }
+
+            $token = $this->authService->createToken($user, true);
+
+            return $this->sendResponse('Social login successful', [
+                'user' => new UserResource($user),
+                'token' => $token,
+            ]);
+        } catch (\Exception $e) {
+            return $this->sendError('Social login failed: ' . $e->getMessage(), null, 500);
+        }
+    }
+
+    /**
+     * Handle social login with user data directly from app
+     * Used when social SDK is handled on client side
+     *
+     * @param Request $request
+     * @param string $provider
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function handleSocialLoginWithUserData(Request $request, $provider)
+    {
+        $validator = Validator::make($request->all(), [
+            'id' => 'required|string',
+            'email' => 'required|email',
+            'name' => 'required|string',
+            'avatar' => 'nullable|string',
+            'device_token' => 'nullable|string'
+        ]);
+
+        if ($validator->fails()) {
+            return $this->sendError('Validation Error', $validator->errors(), 422);
+        }
+
+        try {
+            $user = $this->authService->handleSocialLogin(
+                $provider,
+                null,
+                [
+                    'id' => $request->id,
+                    'name' => $request->name,
+                    'email' => $request->email,
+                    'avatar' => $request->avatar,
+                    'username' => $request->username ?? null
+                ]
+            );
+
+            // Update device token if provided
+            if ($request->device_token) {
+                $user->device_token = $request->device_token;
+                $user->save();
+            }
+
+            $token = $this->authService->createToken($user, true);
+
+            return $this->sendResponse('Social login successful', [
+                'user' => new UserResource($user),
+                'token' => $token,
+            ]);
+        } catch (\Exception $e) {
+            return $this->sendError('Social login failed: ' . $e->getMessage(), null, 500);
+        }
     }
 
     /**
@@ -69,77 +398,81 @@ class AuthController extends BaseController
      */
     public function logout(Request $request)
     {
-        $request->user()->currentAccessToken()->delete();
+        try {
+            $user = $request->user();
 
-        return $this->sendResponse('Logout successful');
+            // Set user offline
+            $user->is_online = false;
+            $user->save();
+
+            // Revoke the token
+            $request->user()->currentAccessToken()->delete();
+
+            return $this->sendResponse('Logged out successfully', null);
+        } catch (\Exception $e) {
+            return $this->sendError('Logout failed: ' . $e->getMessage(), null, 500);
+        }
     }
 
     /**
-     * Get authenticated user
+     * Get authenticated user profile
      *
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public function user(Request $request)
+    public function getUser(Request $request)
     {
-        return $this->sendResponse('User retrieved successfully', [
-            'user' => new UserResource($request->user()),
-        ]);
+        try {
+            $user = $request->user();
+
+            // Update last activity
+            $user->last_activity_at = now();
+            $user->save();
+
+            // Load relevant relationships
+            $user->load(['country', 'socialCircles']);
+
+            return $this->sendResponse('User profile retrieved successfully', [
+                'user' => new UserResource($user)
+            ]);
+        } catch (\Exception $e) {
+            return $this->sendError('Failed to retrieve user profile: ' . $e->getMessage(), null, 500);
+        }
     }
 
     /**
-     * Send password reset link
+     * Update user password
      *
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public function forgotPassword(Request $request)
+    public function changePassword(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'email' => 'required|email|exists:users,email',
+            'current_password' => 'required|string',
+            'password' => 'required|string|min:8|confirmed',
         ]);
 
         if ($validator->fails()) {
-            return $this->sendError('Validation error', $validator->errors(), 422);
+            return $this->sendError('Validation Error', $validator->errors(), 422);
         }
 
-        $success = $this->authService->sendPasswordResetLink($request->email);
+        try {
+            $user = $request->user();
 
-        if (!$success) {
-            return $this->sendError('Failed to send password reset link');
+            // Verify current password
+            if (!\Hash::check($request->current_password, $user->password)) {
+                return $this->sendError('Current password is incorrect', null, 400);
+            }
+
+            // Update password
+            $user->password = \Hash::make($request->password);
+            $user->save();
+
+            return $this->sendResponse('Password updated successfully', null);
+        } catch (\Exception $e) {
+            return $this->sendError('Failed to update password: ' . $e->getMessage(), null, 500);
         }
-
-        return $this->sendResponse('Password reset link sent');
-    }
-
-    /**
-     * Reset password
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function resetPassword(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'email' => 'required|email|exists:users,email',
-            'token' => 'required|string',
-            'password' => 'required|confirmed|min:8',
-        ]);
-
-        if ($validator->fails()) {
-            return $this->sendError('Validation error', $validator->errors(), 422);
-        }
-
-        $success = $this->authService->resetPassword(
-            $request->email,
-            $request->token,
-            $request->password
-        );
-
-        if (!$success) {
-            return $this->sendError('Invalid or expired token', null, 422);
-        }
-
-        return $this->sendResponse('Password reset successful');
     }
 }
+

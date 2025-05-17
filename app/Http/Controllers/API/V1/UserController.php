@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Http\Controllers\API\V1;
 
 use App\Http\Controllers\API\BaseController;
@@ -6,6 +7,8 @@ use App\Http\Requests\V1\UpdateProfileImageRequest;
 use App\Http\Requests\V1\UpdateSocialLinksRequest;
 use App\Http\Requests\V1\UpdateUserRequest;
 use App\Http\Resources\V1\UserResource;
+use App\Http\Resources\V1\CountryResource;
+use App\Models\Country;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -98,4 +101,24 @@ class UserController extends BaseController
 
         return $this->sendResponse('User account deleted successfully');
     }
+
+    /**
+ * Get all countries
+ *
+ * @return \Illuminate\Http\JsonResponse
+ */
+public function getCountries()
+{
+    try {
+        $countries = Country::where('active', true)
+            ->orderBy('name', 'asc')
+            ->get();
+
+        return $this->sendResponse('Countries retrieved successfully', [
+            'countries' => CountryResource::collection($countries)
+        ]);
+    } catch (\Exception $e) {
+        return $this->sendError('Failed to retrieve countries', $e->getMessage(), 500);
+    }
+}
 }

@@ -1,5 +1,4 @@
 <?php
-// routes/api.php
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -16,46 +15,41 @@ use App\Http\Controllers\API\V1\SubscriptionController;
 use App\Http\Controllers\API\V1\MessageController;
 use App\Http\Controllers\API\V1\ProfileController;
 
-/*
-|--------------------------------------------------------------------------
-| API Routes
-|--------------------------------------------------------------------------
-|
-| Here is where you can register API routes for your application. These
-| routes are loaded by the RouteServiceProvider within a group which
-| is assigned the "api" middleware group. Enjoy building your API!
-|
-*/
 
 Route::middleware('auth:api')->get('/user', function (Request $request) {
     return $request->user();
 });
 
-// API V1 Routes
-Route::group([
-    'prefix' => 'v1'
-], function () {
     // Public routes
     Route::post('login', [AuthController::class, 'login']);
     Route::post('register', [AuthController::class, 'register']);
     Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
+    Route::post('verify-reset-otp', [AuthController::class, 'verifyResetOTP']);
     Route::post('reset-password', [AuthController::class, 'resetPassword']);
     Route::get('countries', [UserController::class, 'getCountries']);
     Route::get('social-circles', [SocialCircleController::class, 'index']);
+Route::post('verify-email', [AuthController::class, 'verifyEmail']);
+Route::post('resend-verification-otp', [AuthController::class, 'resendVerificationOTP']);
 
     // Protected routes
-    Route::middleware('auth:api')->group(function () {
+    Route::middleware('auth:sanctum')->group(function () {
         // Auth
         Route::post('logout', [AuthController::class, 'logout']);
         Route::post('change-password', [AuthController::class, 'changePassword']);
 
         // User Profile
-        Route::get('user', [UserController::class, 'getUser']);
+        Route::get('user', [UserController::class, 'show']);
         Route::get('user/{id}', [UserController::class, 'getUserById']);
         Route::post('profile', [ProfileController::class, 'update']);
         Route::post('profile/upload', [ProfileController::class, 'uploadProfilePicture']);
         Route::post('profile/upload-multiple', [ProfileController::class, 'uploadMultipleProfilePictures']);
         Route::delete('account', [ProfileController::class, 'deleteAccount']);
+// Social login routes
+Route::get('auth/{provider}', [AuthController::class, 'redirectToProvider']);
+Route::get('auth/{provider}/callback', [AuthController::class, 'handleProviderCallback']);
+Route::post('auth/{provider}/token', [AuthController::class, 'handleSocialLoginFromApp']);
+Route::post('auth/{provider}/user-data', [AuthController::class, 'handleSocialLoginWithUserData']);
+
 
         // Social Links
         Route::get('social-links', [ProfileController::class, 'getSocialLinks']);
@@ -122,4 +116,4 @@ Route::group([
         Route::get('messages/users', [MessageController::class, 'getMessageUsers']);
         Route::get('messages/user/{id}', [MessageController::class, 'getMessages']);
     });
-});
+

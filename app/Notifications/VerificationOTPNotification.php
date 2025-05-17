@@ -7,26 +7,26 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class ResetPasswordNotification extends Notification implements ShouldQueue
+class VerificationOTPNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 
     /**
-     * The password reset token.
+     * The OTP code.
      *
      * @var string
      */
-    public $token;
+    protected $otp;
 
     /**
      * Create a new notification instance.
      *
-     * @param string $token
+     * @param string $otp
      * @return void
      */
-    public function __construct($token)
+    public function __construct($otp)
     {
-        $this->token = $token;
+        $this->otp = $otp;
     }
 
     /**
@@ -48,13 +48,11 @@ class ResetPasswordNotification extends Notification implements ShouldQueue
      */
     public function toMail($notifiable)
     {
-        $url = url(config('app.frontend_url') . '/reset-password?token=' . $this->token . '&email=' . $notifiable->getEmailForPasswordReset());
-
         return (new MailMessage)
-            ->subject('Reset Password Notification')
-            ->line('You are receiving this email because we received a password reset request for your account.')
-            ->action('Reset Password', $url)
-            ->line('This password reset link will expire in 60 minutes.')
-            ->line('If you did not request a password reset, no further action is required.');
+            ->subject('Verify Your Email Address')
+            ->line('Please use the following OTP code to verify your email address.')
+            ->line('Your OTP code is: ' . $this->otp)
+            ->line('This OTP code will expire in 30 minutes.')
+            ->line('If you did not create an account, no further action is required.');
     }
 }
