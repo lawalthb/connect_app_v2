@@ -44,17 +44,14 @@ class AuthController extends BaseController
             $user->email_otp_expires_at = now()->addHours(1); // OTP expires in 1 hour
             $user->save();
 
-            // Send emails with error handling
+            // Queue emails instead of sending them immediately
             try {
-                // Send welcome email
-                Mail::to($user->email)->send(new WelcomeEmail($user));
-
-                // Send verification email with OTP
-                Mail::to($user->email)->send(new VerificationEmail($user, $otp));
+                // The emails will be sent in the background
+                Mail::to($user->email)->queue(new WelcomeEmail($user));
+                Mail::to($user->email)->queue(new VerificationEmail($user, $otp));
             } catch (\Exception $mailException) {
                 // Log the email error but don't fail the registration
-                \Log::error('Failed to send registration emails: ' . $mailException->getMessage());
-                // Continue with registration process
+                \Log::error('Failed to queue registration emails: ' . $mailException->getMessage());
             }
 
             $token = $this->authService->createToken($user);
@@ -67,7 +64,6 @@ class AuthController extends BaseController
             return $this->sendError('Registration failed: ' . $e->getMessage(), null, 500);
         }
     }
-
     /**
      * Login user
      *
