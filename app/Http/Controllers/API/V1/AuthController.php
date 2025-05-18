@@ -13,6 +13,7 @@ use Illuminate\Validation\ValidationException;
 use Laravel\Socialite\Facades\Socialite;
 use App\Mail\WelcomeEmail;
 use App\Mail\VerificationEmail;
+use App\Models\User;
 use Illuminate\Support\Facades\Mail;
 
 
@@ -258,9 +259,9 @@ class AuthController extends BaseController
 
             $otp = $this->authService->generateEmailVerificationOTP($user);
 
-            // Here you would normally send the OTP via email
-            // For example: Mail::to($user->email)->send(new VerificationOTPMail($otp));
 
+            // Queue the email for sending
+            Mail::to($user->email)->queue(new VerificationEmail($user, $otp));
             return $this->sendResponse(
                 'Verification OTP has been sent to your email',
                 ['email' => $user->email]
