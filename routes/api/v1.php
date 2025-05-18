@@ -22,14 +22,25 @@ Route::middleware('auth:api')->get('/user', function (Request $request) {
 
     // Public routes
     Route::post('login', [AuthController::class, 'login']);
-    Route::post('register', [AuthController::class, 'register']);
+    Route::post('register', [AuthController::class, 'register'])
+        ->middleware(['throttle:5,1']);
     Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('verify-reset-otp', [AuthController::class, 'verifyResetOTP']);
     Route::post('reset-password', [AuthController::class, 'resetPassword']);
     Route::get('countries', [UserController::class, 'getCountries']);
     Route::get('social-circles', [SocialCircleController::class, 'index']);
 Route::post('verify-email', [AuthController::class, 'verifyEmail']);
-Route::post('resend-verification-otp', [AuthController::class, 'resendVerificationOTP']);
+Route::post('resend-verification-otp', [AuthController::class, 'resendVerificationOTP'])
+    ->middleware(['throttle:5,1']);
+    Route::post('verify-email-otp', [AuthController::class, 'verifyEmailOTP'])
+        ->middleware(['throttle:5,1']);
+
+        // Social login routes
+Route::get('auth/{provider}', [AuthController::class, 'redirectToProvider']);
+Route::get('auth/{provider}/callback', [AuthController::class, 'handleProviderCallback']);
+Route::post('auth/{provider}/token', [AuthController::class, 'handleSocialLoginFromApp']);
+Route::post('auth/{provider}/user-data', [AuthController::class, 'handleSocialLoginWithUserData']);
+
 
     // Protected routes
     Route::middleware('auth:sanctum')->group(function () {
@@ -44,11 +55,7 @@ Route::post('resend-verification-otp', [AuthController::class, 'resendVerificati
         Route::post('profile/upload', [ProfileController::class, 'uploadProfilePicture']);
         Route::post('profile/upload-multiple', [ProfileController::class, 'uploadMultipleProfilePictures']);
         Route::delete('account', [ProfileController::class, 'deleteAccount']);
-// Social login routes
-Route::get('auth/{provider}', [AuthController::class, 'redirectToProvider']);
-Route::get('auth/{provider}/callback', [AuthController::class, 'handleProviderCallback']);
-Route::post('auth/{provider}/token', [AuthController::class, 'handleSocialLoginFromApp']);
-Route::post('auth/{provider}/user-data', [AuthController::class, 'handleSocialLoginWithUserData']);
+
 
 
         // Social Links

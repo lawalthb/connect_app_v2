@@ -14,16 +14,25 @@ use Laravel\Socialite\Facades\Socialite;
 use App\Mail\WelcomeEmail;
 use App\Mail\VerificationEmail;
 use App\Models\User;
+use App\Services\EmailValidationService;
+use App\Services\RecaptchaService;
 use Illuminate\Support\Facades\Mail;
 
 
 class AuthController extends BaseController
 {
     protected $authService;
+    protected $recaptchaService;
+    protected $emailValidationService;
 
-    public function __construct(AuthService $authService)
-    {
+    public function __construct(
+        AuthService $authService,
+        RecaptchaService $recaptchaService,
+        EmailValidationService $emailValidationService
+    ) {
         $this->authService = $authService;
+        $this->recaptchaService = $recaptchaService;
+        $this->emailValidationService = $emailValidationService;
     }
 
     /**
@@ -35,6 +44,16 @@ class AuthController extends BaseController
     public function register(RegisterRequest $request)
     {
         try {
+            // Verify reCAPTCHA
+            // if (!$this->recaptchaService->verify($request->recaptcha_token)) {
+            //     return $this->sendError('Bot verification failed. Please try again.', null, 400);
+            // }
+
+            // Check for suspicious email
+            if (!$this->emailValidationService->isValidEmail($request->email)) {
+                return $this->sendError('Invalid or suspicious email address.', null, 400);
+            }
+
             $user = $this->authService->register($request->validated());
 
             // Generate OTP for email verification

@@ -41,6 +41,8 @@ class RegisterRequest extends FormRequest
             'interests' => 'nullable|array',
             'social_links' => 'nullable|array',
             'device_token' => 'nullable|string',
+          //  'recaptcha_token' => 'required|string',
+            'website' => 'prohibited', // Honeypot field - should always be empty
         ];
     }
 
