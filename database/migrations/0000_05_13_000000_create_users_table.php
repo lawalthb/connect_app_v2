@@ -92,6 +92,11 @@ return new class extends Migration
             $table->char('deleted_flag', 1)->default('N')->comment('Y for deleted, N for active');
             $table->timestamp('email_otp_expires_at')->nullable();
 
+            //social login
+            $table->string('provider')->nullable()->comment('For social login');
+            $table->string('provider_id')->nullable()->comment('For social login');
+
+
             // Foreign keys
             $table->foreign('country_id')->references('id')->on('countries')->onDelete('set null');
         });

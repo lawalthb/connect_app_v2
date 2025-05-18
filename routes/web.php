@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\API\V1\AuthController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -16,3 +17,6 @@ Route::get('/test-mail', function () {
         return 'Email error: ' . $e->getMessage();
     }
 });
+// Google OAuth routes - moved to web middleware
+Route::get('api/v1/auth/google', [AuthController::class, 'redirectToGoogle']);
+Route::get('api/v1/auth/google/callback', [AuthController::class, 'handleGoogleCallback']);

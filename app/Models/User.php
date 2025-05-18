@@ -64,7 +64,9 @@ class User extends Authenticatable implements MustVerifyEmail
         'is_banned',
         'ban_reason',
         'banned_until',
-         'email_otp_expires_at'
+         'email_otp_expires_at',
+         'deleted_at',
+        'deleted_flag',
     ];
 
     /**
@@ -111,6 +113,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'is_active' => 'boolean',
         'is_verified' => 'boolean',
         'is_banned' => 'boolean',
+        'deleted_flag' => 'string',
+        'deleted_at' => 'datetime',
     ];
 
     /**
@@ -132,13 +136,13 @@ class User extends Authenticatable implements MustVerifyEmail
             }
         });
 
-        static::deleting(function ($user) {
-            if (auth()->check()) {
-                $user->deleted_by = auth()->id();
-                $user->deleted_flag = 'Y';
-                $user->save();
-            }
-        });
+        // static::deleting(function ($user) {
+        //     if (auth()->check()) {
+        //         $user->deleted_by = auth()->id();
+        //         $user->deleted_flag = 'Y';
+        //         $user->save();
+        //     }
+        // });
     }
 
     /**

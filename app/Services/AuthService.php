@@ -13,6 +13,8 @@ use Laravel\Socialite\Facades\Socialite;
 use App\Helpers\SocialCircleHelper;
 use App\Exceptions\AuthenticationException;
 
+
+
 class AuthService
 {
     /**
@@ -73,6 +75,21 @@ class AuthService
      */
     public function attemptLogin(string $email, string $password, bool $remember = false): ?User
     {
+        // Check for deleted account first - use withTrashed() to include soft-deleted records
+        $user = User::withTrashed()
+            ->where('email', $email)
+            ->where(function($query) {
+                $query->where('deleted_flag', 'Y')
+                      ->orWhereNotNull('deleted_at');
+            })
+            ->first();
+
+        if ($user) {
+            throw new AuthenticationException(
+                'This account has been deleted. Please contact support if you wish to recover it.',
+                403
+            );
+        }
         if (!Auth::attempt(['email' => $email, 'password' => $password], $remember)) {
             return null;
         }

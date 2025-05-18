@@ -6,6 +6,7 @@ use App\Http\Resources\V1\UserResource;
 use App\Models\ProfileMultiUpload;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 
@@ -263,24 +264,55 @@ class ProfileController extends BaseController
     }
 
     /**
-     * Delete the authenticated user's account.
+     * Delete the authenticated user's account after password verification.
      *
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
      */
     public function deleteAccount(Request $request)
     {
+        // Validate the request
+        $validator = Validator::make($request->all(), [
+            'password' => 'required|string',
+        ]);
+//dd($request->all());
+        if ($validator->fails()) {
+            return $this->sendError('Validation error', $validator->errors(), 422);
+        }
+
         $user = $request->user();
 
-        // Soft delete the user
-        $user->update([
-            'deleted_flag' => 'Y',
-            'deleted_at' => now(),
-        ]);
+        // Verify the password
+        if (!Hash::check($request->password, $user->password)) {
+            return $this->sendError('Password is incorrect', null, 403);
+        }
 
-        // Revoke all tokens
-        $user->tokens()->delete();
+        try {
+            // Soft delete the user
+            $user->update([
+                'deleted_flag' => 'Y',
+                'deleted_at' => now(),
+            ]);
 
-        return $this->sendResponse('Account deleted successfully');
+            // Revoke all tokens
+            $user->tokens()->delete();
+
+            // Log the account deletion
+            \Log::info('User account deleted', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+            ]);
+
+            return $this->sendResponse('Account deleted successfully');
+        } catch (\Exception $e) {
+            \Log::error('Account deletion failed', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->sendError('Failed to delete account: ' . $e->getMessage(), null, 500);
+        }
     }
 }

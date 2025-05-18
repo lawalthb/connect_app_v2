@@ -14,10 +14,12 @@ use Laravel\Socialite\Facades\Socialite;
 use App\Mail\WelcomeEmail;
 use App\Mail\VerificationEmail;
 use App\Models\User;
+use Illuminate\Support\Facades\Auth;
 use App\Services\EmailValidationService;
 use App\Services\RecaptchaService;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
-
+use illuminate\Support\Str;
 
 class AuthController extends BaseController
 {
@@ -93,6 +95,7 @@ class AuthController extends BaseController
     public function login(LoginRequest $request)
     {
         try {
+            // Attempt login
             $user = $this->authService->attemptLogin(
                 $request->email,
                 $request->password,
@@ -114,10 +117,7 @@ class AuthController extends BaseController
         } catch (\Exception $e) {
             return $this->sendError('Login failed: ' . $e->getMessage(), null, 500);
         }
-    }
-
-    /**
-     * Send forgot password OTP
+    }    /**     * Send forgot password OTP
      *
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
@@ -298,13 +298,19 @@ class AuthController extends BaseController
      */
     public function redirectToProvider($provider)
     {
-        $validProviders = ['google', 'facebook', 'twitter', 'apple'];
-
-        if (!in_array($provider, $validProviders)) {
-            return $this->sendError('Unsupported social provider', null, 400);
+        try {
+            $url = Socialite::driver($provider)->redirect();
+            return response()->json([
+                'status' => 1,
+                'message' => 'Redirect URL generated successfully',
+                'data' => ['url' => $url]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 0,
+                'message' => 'Failed to generate redirect URL: ' . $e->getMessage()
+            ], 500);
         }
-
-        return Socialite::driver($provider)->redirect();
     }
 
     /**
@@ -405,7 +411,6 @@ class AuthController extends BaseController
             'email' => 'required|email',
             'name' => 'required|string',
             'avatar' => 'nullable|string',
-            'device_token' => 'nullable|string'
         ]);
 
         if ($validator->fails()) {
@@ -413,25 +418,32 @@ class AuthController extends BaseController
         }
 
         try {
-            $user = $this->authService->handleSocialLogin(
-                $provider,
-                null,
-                [
-                    'id' => $request->id,
+            // Find or create user based on provided social data
+            $user = User::where('email', $request->email)->first();
+
+            if (!$user) {
+                $user = User::create([
                     'name' => $request->name,
                     'email' => $request->email,
-                    'avatar' => $request->avatar,
-                    'username' => $request->username ?? null
-                ]
-            );
+                    'password' => Hash::make(Str::random(24)),
+                    'email_verified_at' => now(),
+                    'provider_id' => $provider === 'google' ? $request->id : null,
+                    'provider' => $provider,
+                    // Set other social IDs based on provider
+                ]);
 
-            // Update device token if provided
-            if ($request->device_token) {
-                $user->device_token = $request->device_token;
-                $user->save();
+                $user->assignRole('user');
+            } else {
+                // Update social ID if not set
+                if ($provider === 'google' && empty($user->google_id)) {
+                    $user->google_id = $request->id;
+                    $user->save();
+                }
+                // Handle other providers similarly
             }
 
-            $token = $this->authService->createToken($user, true);
+            // Create token
+            $token = $user->createToken('auth-token')->plainTextToken;
 
             return $this->sendResponse('Social login successful', [
                 'user' => new UserResource($user),
@@ -566,5 +578,82 @@ public function resendVerificationEmail(Request $request)
         'email' => $user->email
     ]);
 }
-}
 
+    /**
+     * Redirect the user to the Google authentication page.
+     *
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function redirectToGoogle()
+    {
+        try {
+            $url = Socialite::driver('google')->stateless()->redirect()->getTargetUrl();
+            return response()->json([
+                'status' => 1,
+                'message' => 'Redirect URL generated successfully',
+                'data' => ['url' => $url]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 0,
+                'message' => 'Failed to generate redirect URL: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Obtain the user information from Google.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function handleGoogleCallback(Request $request)
+    {
+        try {
+            $googleUser = Socialite::driver('google')->stateless()->user();
+
+            // Find existing user or create new one
+            $user = User::where('email', $googleUser->email)->first();
+
+            if (!$user) {
+                $user = User::create([
+                    'name' => $googleUser->name,
+                    'email' => $googleUser->email,
+                    'provider_id' => $googleUser->id,
+                    'provider' => 'google',
+                    'avatar' => $googleUser->avatar,
+                    'username' => $googleUser->nickname,
+                    'password' => Hash::make(Str::random(24)),
+                    'email_verified_at' => now(), // Google accounts are already verified
+                ]);
+
+                // Assign appropriate role
+             //   $user->assignRole('user');
+            } else {
+                // Update Google ID if not set
+                if (empty($user->provider_id)) {
+                    $user->provider_id = $googleUser->id;
+                    $user->provider = 'google';
+                    $user->save();
+                }
+            }
+
+            // Create token
+            $token = $user->createToken('auth-token')->plainTextToken;
+
+            return response()->json([
+                'message' => 'Successfully authenticated with Google',
+                'status' => 1,
+                'data' => [
+                    'user' => new UserResource($user),
+                    'token' => $token
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Google authentication failed: ' . $e->getMessage(),
+                'status' => 0,
+                'data' => []
+            ], 500);
+        }
+    }
+}

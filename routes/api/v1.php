@@ -14,6 +14,12 @@ use App\Http\Controllers\API\V1\NotificationController;
 use App\Http\Controllers\API\V1\SubscriptionController;
 use App\Http\Controllers\API\V1\MessageController;
 use App\Http\Controllers\API\V1\ProfileController;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
+use App\Models\User;
+use App\Http\Resources\V1\UserResource;
+
+
 
 
 Route::middleware('auth:api')->get('/user', function (Request $request) {
