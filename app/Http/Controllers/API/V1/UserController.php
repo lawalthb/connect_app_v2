@@ -11,6 +11,8 @@ use App\Http\Resources\V1\CountryResource;
 use App\Models\Country;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Cache;
+
 
 class UserController extends BaseController
 {
@@ -110,9 +112,11 @@ class UserController extends BaseController
 public function getCountries()
 {
     try {
-        $countries = Country::where('active', true)
-            ->orderBy('name', 'asc')
-            ->get();
+        $countries = Cache::remember('countries', 60*24, function () {
+            return Country::where('active', true)
+                ->orderBy('name', 'asc')
+                ->get();
+        });
 
         return $this->sendResponse('Countries retrieved successfully', [
             'countries' => CountryResource::collection($countries)

@@ -11,6 +11,10 @@ use Illuminate\Support\Facades\Validator;
 use App\Exceptions\AuthenticationException;
 use Illuminate\Validation\ValidationException;
 use Laravel\Socialite\Facades\Socialite;
+use App\Mail\WelcomeEmail;
+use App\Mail\VerificationEmail;
+use Illuminate\Support\Facades\Mail;
+
 
 class AuthController extends BaseController
 {
@@ -31,12 +35,31 @@ class AuthController extends BaseController
     {
         try {
             $user = $this->authService->register($request->validated());
+
+            // Generate OTP for email verification
+            $otp = str_pad(random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+
+            // Store OTP in database
+            $user->email_otp = $otp;
+            $user->email_otp_expires_at = now()->addHours(1); // OTP expires in 1 hour
+            $user->save();
+
+            // Send emails with error handling
+            try {
+                // Send welcome email
+                Mail::to($user->email)->send(new WelcomeEmail($user));
+
+                // Send verification email with OTP
+                Mail::to($user->email)->send(new VerificationEmail($user, $otp));
+            } catch (\Exception $mailException) {
+                // Log the email error but don't fail the registration
+                \Log::error('Failed to send registration emails: ' . $mailException->getMessage());
+                // Continue with registration process
+            }
+
             $token = $this->authService->createToken($user);
 
-            // Send email verification OTP here if needed
-            // You can integrate with your notification system
-
-            return $this->sendResponse('User registered successfully', [
+            return $this->sendResponse('User registered successfully. Please check your email for verification instructions.', [
                 'user' => new UserResource($user),
                 'token' => $token,
             ], 201);
@@ -189,16 +212,29 @@ class AuthController extends BaseController
             return $this->sendError('Validation Error', $validator->errors(), 422);
         }
 
-        $verified = $this->authService->verifyEmail(
-            $request->email,
-            $request->otp
-        );
+        $user = User::where('email', $request->email)->first();
 
-        if (!$verified) {
+        if (!$user) {
+            return $this->sendError('User not found', null, 404);
+        }
+
+        if ($user->email_otp != $request->otp) {
             return $this->sendError('Invalid OTP', null, 400);
         }
 
-        return $this->sendResponse('Email verified successfully', null);
+        if ($user->email_otp_expires_at < now()) {
+            return $this->sendError('OTP has expired', null, 400);
+        }
+
+        // Mark email as verified
+        $user->email_verified_at = now();
+        $user->email_otp = null;
+        $user->email_otp_expires_at = null;
+        $user->save();
+
+        return $this->sendResponse('Email verified successfully', [
+            'user' => new UserResource($user)
+        ]);
     }
 
     /**
@@ -474,5 +510,45 @@ class AuthController extends BaseController
             return $this->sendError('Failed to update password: ' . $e->getMessage(), null, 500);
         }
     }
+
+    /**
+ * Resend verification email
+ *
+ * @param Request $request
+ * @return \Illuminate\Http\JsonResponse
+ */
+public function resendVerificationEmail(Request $request)
+{
+    $validator = Validator::make($request->all(), [
+        'email' => 'required|email|exists:users,email',
+    ]);
+
+    if ($validator->fails()) {
+        return $this->sendError('Validation Error', $validator->errors(), 422);
+    }
+
+    $user = User::where('email', $request->email)->first();
+
+    if (!$user) {
+        return $this->sendError('User not found', null, 404);
+    }
+
+    if ($user->email_verified_at) {
+        return $this->sendError('Email already verified', null, 400);
+    }
+
+    // Generate new OTP
+    $otp = str_pad(random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+    $user->email_otp = $otp;
+    $user->email_otp_expires_at = now()->addHours(1);
+    $user->save();
+
+    // Send verification email with new OTP
+    Mail::to($user->email)->send(new VerificationEmail($user, $otp));
+
+    return $this->sendResponse('Verification email sent successfully', [
+        'email' => $user->email
+    ]);
+}
 }
 

@@ -64,6 +64,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'is_banned',
         'ban_reason',
         'banned_until',
+         'email_otp_expires_at'
     ];
 
     /**

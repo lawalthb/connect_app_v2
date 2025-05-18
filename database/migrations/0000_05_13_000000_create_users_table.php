@@ -90,6 +90,7 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
             $table->char('deleted_flag', 1)->default('N')->comment('Y for deleted, N for active');
+            $table->timestamp('email_otp_expires_at')->nullable();
 
             // Foreign keys
             $table->foreign('country_id')->references('id')->on('countries')->onDelete('set null');
