@@ -30,7 +30,7 @@ class AuthService
             $data['email_otp'] = sprintf("%04d", mt_rand(1000, 9999));
         }
 
-        // Hash password if not already hashed
+
         if (isset($data['password']) && !$this->isHashedPassword($data['password'])) {
             $data['password'] = Hash::make($data['password']);
         }
@@ -59,11 +59,41 @@ class AuthService
             'social_type' => $data['social_type'] ?? null,
         ]);
 
-        // Assign default social circles
-        $this->assignDefaultSocialCircles($user);
+        // Assign social circles if provided, otherwise assign default social circle (ID: 26)
+        if (isset($data['social_circles']) && is_array($data['social_circles']) && !empty($data['social_circles'])) {
+            $this->assignSocialCircles($user, $data['social_circles']);
+        } else {
+            // Assign default social circle (ID: 26)
+            $this->assignSocialCircles($user, [26]);
+        }
+        //$this->assignDefaultSocialCircles($user);
 
         return $user;
     }
+
+
+    /**
+ * Assign specific social circles to a user
+ *
+ * @param User $user
+ * @param array $socialCircleIds
+ * @return void
+ */
+private function assignSocialCircles(User $user, array $socialCircleIds): void
+{
+    foreach ($socialCircleIds as $socialCircleId) {
+        // Validate that the social circle ID is numeric
+        if (is_numeric($socialCircleId)) {
+            DB::table('user_social_circles')->insert([
+                'user_id' => $user->id,
+                'social_id' => $socialCircleId,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+        }
+    }
+}
+
 
     /**
      * Attempt to log in a user

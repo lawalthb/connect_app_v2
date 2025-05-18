@@ -56,7 +56,15 @@ class AuthController extends BaseController
                 return $this->sendError('Invalid or suspicious email address.', null, 400);
             }
 
-            $user = $this->authService->register($request->validated());
+            // Prepare registration data
+            $registrationData = $request->validated();
+
+            // Process social circles if provided
+            if ($request->has('social_circles')) {
+                $registrationData['social_circles'] = $request->social_circles;
+            }
+
+            $user = $this->authService->register($registrationData);
 
             // Generate OTP for email verification
             $otp = str_pad(random_int(0, 9999), 4, '0', STR_PAD_LEFT);

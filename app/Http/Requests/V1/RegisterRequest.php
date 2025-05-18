@@ -29,7 +29,7 @@ class RegisterRequest extends FormRequest
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8',
-            'username' => 'required|string|max:255|unique:users,username',
+            'username' => 'nullable|string|max:255|unique:users,username',
             'bio' => 'nullable|string|max:500',
             'country_id' => 'nullable|exists:countries,id',
             'phone' => 'nullable|string|max:20',
@@ -41,6 +41,8 @@ class RegisterRequest extends FormRequest
             'interests' => 'nullable|array',
             'social_links' => 'nullable|array',
             'device_token' => 'nullable|string',
+            'social_circles' => 'nullable|array',
+            'social_circles.*' => 'exists:social_circles,id',
           //  'recaptcha_token' => 'required|string',
             'website' => 'prohibited', // Honeypot field - should always be empty
         ];

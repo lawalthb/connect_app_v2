@@ -36,7 +36,7 @@ return new class extends Migration
         });
 
         // Create many-to-many relationship between users and social circles
-        Schema::create('user_social_circle', function (Blueprint $table) {
+        Schema::create('user_social_circles', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('user_id');
             $table->unsignedBigInteger('social_id')->comment('References social_circles.id');
@@ -61,7 +61,7 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('user_social_circle');
+        Schema::dropIfExists('user_social_circles');
         Schema::dropIfExists('social_circles');
     }
 };
