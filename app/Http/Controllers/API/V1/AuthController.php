@@ -37,63 +37,75 @@ class AuthController extends BaseController
         $this->emailValidationService = $emailValidationService;
     }
 
-    /**
-     * Register a new user
-     *
-     * @param RegisterRequest $request
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function register(RegisterRequest $request)
-    {
-        try {
-            // Verify reCAPTCHA
-            // if (!$this->recaptchaService->verify($request->recaptcha_token)) {
-            //     return $this->sendError('Bot verification failed. Please try again.', null, 400);
-            // }
+   /**
+ * Register a new user
+ *
+ * @param RegisterRequest $request
+ * @return \Illuminate\Http\JsonResponse
+ */
+public function register(RegisterRequest $request)
+{
+    try {
+        // Verify reCAPTCHA
+        // if (!$this->recaptchaService->verify($request->recaptcha_token)) {
+        //     return $this->sendError('Bot verification failed. Please try again.', null, 400);
+        // }
 
-            // Check for suspicious email
-            if (!$this->emailValidationService->isValidEmail($request->email)) {
-                return $this->sendError('Invalid or suspicious email address.', null, 400);
-            }
-
-            // Prepare registration data
-            $registrationData = $request->validated();
-
-            // Process social circles if provided
-            if ($request->has('social_circles')) {
-                $registrationData['social_circles'] = $request->social_circles;
-            }
-
-            $user = $this->authService->register($registrationData);
-
-            // Generate OTP for email verification
-            $otp = str_pad(random_int(0, 9999), 4, '0', STR_PAD_LEFT);
-
-            // Store OTP in database
-            $user->email_otp = $otp;
-            $user->email_otp_expires_at = now()->addHours(1); // OTP expires in 1 hour
-            $user->save();
-
-            // Queue emails instead of sending them immediately
-            try {
-                // The emails will be sent in the background
-                Mail::to($user->email)->queue(new WelcomeEmail($user));
-                Mail::to($user->email)->queue(new VerificationEmail($user, $otp));
-            } catch (\Exception $mailException) {
-                // Log the email error but don't fail the registration
-                \Log::error('Failed to queue registration emails: ' . $mailException->getMessage());
-            }
-
-            $token = $this->authService->createToken($user);
-
-            return $this->sendResponse('User registered successfully. Please check your email for verification instructions.', [
-                'user' => new UserResource($user),
-                'token' => $token,
-            ], 201);
-        } catch (\Exception $e) {
-            return $this->sendError('Registration failed: ' . $e->getMessage(), null, 500);
+        // Check for suspicious email
+        if (!$this->emailValidationService->isValidEmail($request->email)) {
+            return $this->sendError('Invalid or suspicious email address.', null, 400);
         }
+
+        // Prepare registration data
+        $registrationData = $request->validated();
+
+        // Handle profile image upload if provided
+        if ($request->hasFile('profile_image') && $request->file('profile_image')->isValid()) {
+            $fileData = \App\Helpers\S3UploadHelper::uploadFile(
+                $request->file('profile_image'),
+                'profiles'
+            );
+
+            $registrationData['profile'] = $fileData['filename'];
+            $registrationData['profile_url'] = $fileData['url'];
+        }
+
+        // Process social circles if provided
+        if ($request->has('social_circles')) {
+            $registrationData['social_circles'] = $request->social_circles;
+        }
+
+        $user = $this->authService->register($registrationData);
+
+        // Generate OTP for email verification
+        $otp = str_pad(random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+
+        // Store OTP in database
+        $user->email_otp = $otp;
+        $user->email_otp_expires_at = now()->addHours(1); // OTP expires in 1 hour
+        $user->save();
+
+        // Queue emails instead of sending them immediately
+        try {
+            // The emails will be sent in the background
+            Mail::to($user->email)->queue(new WelcomeEmail($user));
+            Mail::to($user->email)->queue(new VerificationEmail($user, $otp));
+        } catch (\Exception $mailException) {
+            // Log the email error but don't fail the registration
+            \Log::error('Failed to queue registration emails: ' . $mailException->getMessage());
+        }
+
+        $token = $this->authService->createToken($user);
+
+        return $this->sendResponse('User registered successfully. Please check your email for verification instructions.', [
+            'user' => new UserResource($user),
+            'token' => $token,
+        ], 201);
+    } catch (\Exception $e) {
+        return $this->sendError('Registration failed: ' . $e->getMessage(), null, 500);
     }
+}
+
     /**
      * Login user
      *

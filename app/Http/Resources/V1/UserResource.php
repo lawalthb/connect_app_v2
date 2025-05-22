@@ -3,6 +3,7 @@
 namespace App\Http\Resources\V1;
 
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Storage;
 
 class UserResource extends JsonResource
 {
@@ -23,11 +24,7 @@ class UserResource extends JsonResource
             'is_verified' => (bool)$this->is_verified,
             'bio' => $this->bio,
             'profile' => $this->profile,
-            'profile_url' => $this->when($this->profile, function () {
-                $baseUrl = config('app.url');
-                $path = $this->profile_url ?? 'storage/profile';
-                return $baseUrl . '/' . $path . '/' . $this->profile;
-            }),
+            'profile_url' => $this->whenNotNull($this->getProfileUrl()),
             'country_id' => $this->country_id,
             'country' => $this->when($this->relationLoaded('country'), function () {
                 return [
@@ -58,5 +55,38 @@ class UserResource extends JsonResource
                 });
             }),
         ];
+    }
+
+    /**
+     * Get properly formatted profile URL
+     *
+     * @return string|null
+     */
+    protected function getProfileUrl()
+    {
+        // If no profile image, return null
+        if (!$this->profile) {
+            return null;
+        }
+
+        // If profile_url already contains a full URL, return it
+        if ($this->profile_url && filter_var($this->profile_url, FILTER_VALIDATE_URL)) {
+            return $this->profile_url;
+        }
+
+        // If we have an S3 path stored in profile_url
+        if ($this->profile_url && str_starts_with($this->profile_url, 's3://')) {
+            return Storage::disk('s3')->url(str_replace('s3://', '', $this->profile_url));
+        }
+
+        // Handle different storage formats - check if profile_url contains a path
+        if ($this->profile_url) {
+            // If it's a path (not a full URL), construct the S3 URL
+            $path = trim($this->profile_url, '/') . '/' . $this->profile;
+            return Storage::disk('s3')->url($path);
+        }
+
+        // Default case - just the filename
+        return Storage::disk('s3')->url('profiles/' . $this->profile);
     }
 }
