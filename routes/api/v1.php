@@ -46,7 +46,7 @@ Route::get('auth/{provider}', [AuthController::class, 'redirectToProvider']);
 Route::get('auth/{provider}/callback', [AuthController::class, 'handleProviderCallback']);
 Route::post('auth/{provider}/token', [AuthController::class, 'handleSocialLoginFromApp']);
 Route::post('auth/{provider}/user-data', [AuthController::class, 'handleSocialLoginWithUserData']);
-
+Route::get('timezones', [UserController::class, 'getTimezones']);
 
     // Protected routes
     Route::middleware('auth:sanctum')->group(function () {
@@ -61,6 +61,8 @@ Route::post('auth/{provider}/user-data', [AuthController::class, 'handleSocialLo
         Route::post('profile/upload', [ProfileController::class, 'uploadProfilePicture']);
         Route::post('profile/upload-multiple', [ProfileController::class, 'uploadMultipleProfilePictures']);
         Route::delete('account', [ProfileController::class, 'deleteAccount']);
+        Route::post('user/timezone', [UserController::class, 'updateTimezone']);
+    });
 
 
 
@@ -128,5 +130,5 @@ Route::post('auth/{provider}/user-data', [AuthController::class, 'handleSocialLo
         Route::post('messages', [MessageController::class, 'send']);
         Route::get('messages/users', [MessageController::class, 'getMessageUsers']);
         Route::get('messages/user/{id}', [MessageController::class, 'getMessages']);
-    });
+
 

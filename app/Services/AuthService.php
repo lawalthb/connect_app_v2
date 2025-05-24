@@ -30,6 +30,9 @@ class AuthService
             $data['email_otp'] = sprintf("%04d", mt_rand(1000, 9999));
         }
 
+        // Set timezone - priority: user input > country default > app default
+        $timezone = $this->determineUserTimezone($data);
+
         // Create the user with all allowed attributes
         $user = User::create([
             'name' => $data['name'],
@@ -43,7 +46,7 @@ class AuthService
             'gender' => $data['gender'] ?? null,
             'city' => $data['city'] ?? null,
             'state' => $data['state'] ?? null,
-            'timezone' => $data['timezone'] ?? config('app.timezone'),
+            'timezone' => $timezone, 
             'interests' => $data['interests'] ?? null,
             'social_links' => $data['social_links'] ?? null,
             'profile' => $data['profile'] ?? null,
@@ -66,6 +69,36 @@ class AuthService
         // $user->load(['socialCircles', 'profileUploads']);
 
         return $user;
+    }
+
+    /**
+     * Determine the user's timezone based on input, country, or default
+     *
+     * @param array $data
+     * @return string
+     */
+    private function determineUserTimezone(array $data): string
+    {
+        // If user provided timezone, validate and use it
+        if (!empty($data['timezone'])) {
+            try {
+                new \DateTimeZone($data['timezone']);
+                return $data['timezone'];
+            } catch (\Exception $e) {
+                // Invalid timezone provided, fall back to other options
+            }
+        }
+
+        // If country is provided, try to get country's default timezone
+        if (!empty($data['country_id'])) {
+            $country = \App\Models\Country::find($data['country_id']);
+            if ($country && !empty($country->timezone)) {
+                return $country->timezone;
+            }
+        }
+
+        // Fall back to application default
+        return config('app.timezone', 'UTC');
     }
 
     /**

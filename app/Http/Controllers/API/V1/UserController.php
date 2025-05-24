@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\API\V1;
 
+use App\Helpers\TimezoneHelper;
 use App\Http\Controllers\API\BaseController;
 use App\Http\Requests\V1\UpdateProfileImageRequest;
 use App\Http\Requests\V1\UpdateSocialLinksRequest;
@@ -12,7 +13,7 @@ use App\Models\Country;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Cache;
-
+use Illuminate\Support\Facades\Validator;
 
 class UserController extends BaseController
 {
@@ -125,4 +126,52 @@ public function getCountries()
         return $this->sendError('Failed to retrieve countries', $e->getMessage(), 500);
     }
 }
+
+    /**
+     * Get list of available timezones
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getTimezones()
+    {
+        //return 5;
+        try {
+            $timezones = TimezoneHelper::getTimezoneList();
+
+            return $this->sendResponse('Timezones retrieved successfully', [
+                'timezones' => $timezones
+            ]);
+        } catch (\Exception $e) {
+            return $this->sendError('Failed to retrieve timezones', $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Update user timezone
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function updateTimezone(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'timezone' => 'required|string|timezone'
+        ]);
+
+        if ($validator->fails()) {
+            return $this->sendError('Validation Error', $validator->errors(), 422);
+        }
+
+        try {
+            $user = $request->user();
+            $user->timezone = $request->timezone;
+            $user->save();
+
+            return $this->sendResponse('Timezone updated successfully', [
+                'user' => new UserResource($user)
+            ]);
+        } catch (\Exception $e) {
+            return $this->sendError('Failed to update timezone', $e->getMessage(), 500);
+        }
+    }
 }

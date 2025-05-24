@@ -4,6 +4,7 @@ namespace App\Http\Resources\V1;
 
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\Storage;
+use App\Helpers\TimezoneHelper;
 
 class UserResource extends JsonResource
 {
@@ -20,7 +21,8 @@ class UserResource extends JsonResource
             'name' => $this->name,
             'email' => $this->email,
             'username' => $this->username,
-            'email_verified_at' => $this->email_verified_at,
+            'email_verified_at' => $this->email_verified_at ?
+                TimezoneHelper::convertToUserTimezone($this->email_verified_at, $this->timezone) : null,
             'is_verified' => (bool)$this->is_verified,
             'bio' => $this->bio,
             'profile' => $this->profile,
@@ -30,20 +32,22 @@ class UserResource extends JsonResource
                 return [
                     'id' => $this->country->id,
                     'name' => $this->country->name,
-                    'code' => $this->country->code
+                    'code' => $this->country->code,
+                    'timezone' => $this->country->timezone
                 ];
             }),
             'city' => $this->city,
             'state' => $this->state,
             'birth_date' => $this->birth_date,
             'gender' => $this->gender,
-            'timezone' => $this->timezone,
+            'timezone' => $this->timezone, // Include user's timezone
             'interests' => $this->interests,
             'social_links' => $this->social_links,
             'is_online' => (bool)$this->is_online,
-            'last_activity_at' => $this->last_activity_at,
-            'created_at' => $this->created_at,
-            'updated_at' => $this->updated_at,
+            'last_activity_at' => $this->last_activity_at ?
+                TimezoneHelper::convertToUserTimezone($this->last_activity_at, $this->timezone) : null,
+            'created_at' => TimezoneHelper::convertToUserTimezone($this->created_at, $this->timezone),
+            'updated_at' => TimezoneHelper::convertToUserTimezone($this->updated_at, $this->timezone),
             'profile_completion' => $this->profile_completion,
 
             // Load social circles without triggering the ambiguous query
@@ -66,7 +70,7 @@ class UserResource extends JsonResource
                         'file_name' => $upload->file_name,
                         'file_url' => $upload->file_url . $upload->file_name,
                         'file_type' => $upload->file_type,
-                        'created_at' => $upload->created_at,
+                        'created_at' => TimezoneHelper::convertToUserTimezone($upload->created_at, $this->timezone),
                     ];
                 });
             }),
