@@ -9,11 +9,13 @@ use App\Services\AuthService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use App\Exceptions\AuthenticationException;
+use App\Helpers\S3UploadHelper;
 use Illuminate\Validation\ValidationException;
 use Laravel\Socialite\Facades\Socialite;
 use App\Mail\WelcomeEmail;
 use App\Mail\VerificationEmail;
 use App\Models\User;
+use App\Models\UserProfileUpload;
 use Illuminate\Support\Facades\Auth;
 use App\Services\EmailValidationService;
 use App\Services\RecaptchaService;
@@ -37,7 +39,7 @@ class AuthController extends BaseController
         $this->emailValidationService = $emailValidationService;
     }
 
-   /**
+  /**
  * Register a new user
  *
  * @param RegisterRequest $request
@@ -59,9 +61,9 @@ public function register(RegisterRequest $request)
         // Prepare registration data
         $registrationData = $request->validated();
 
-        // Handle profile image upload if provided
+        // Handle profile image upload if provided - this will be the primary image in users table
         if ($request->hasFile('profile_image') && $request->file('profile_image')->isValid()) {
-            $fileData = \App\Helpers\S3UploadHelper::uploadFile(
+            $fileData = S3UploadHelper::uploadFile(
                 $request->file('profile_image'),
                 'profiles'
             );
@@ -76,6 +78,13 @@ public function register(RegisterRequest $request)
         }
 
         $user = $this->authService->register($registrationData);
+
+        // Add 4 default profile uploads
+        $this->addDefaultProfileUploads($user);
+
+        // Load relationships after all data is inserted
+        $user->load(['country', 'profileUploads']);
+        // Don't load socialCircles here to avoid the ambiguous query during registration
 
         // Generate OTP for email verification
         $otp = str_pad(random_int(0, 9999), 4, '0', STR_PAD_LEFT);
@@ -105,6 +114,48 @@ public function register(RegisterRequest $request)
         return $this->sendError('Registration failed: ' . $e->getMessage(), null, 500);
     }
 }
+/**
+ * Add default profile uploads to a user
+ *
+ * @param User $user
+ * @return void
+ */
+private function addDefaultProfileUploads(User $user)
+{
+    // Define the default avatars - 2 images and 2 videos
+    $defaultUploads = [
+        [
+            'file_name' => 'public',
+            'file_url' => 'https://avatar.iran.liara.run/',
+            'file_type' => 'image'
+        ],
+        [
+            'file_name' => 'public',
+            'file_url' => 'https://avatar.iran.liara.run/',
+            'file_type' => 'image'
+        ],
+        [
+            'file_name' => 'public',
+            'file_url' => 'https://avatar.iran.liara.run/',
+            'file_type' => 'image'
+        ],
+        [
+            'file_name' => 'public',
+            'file_url' => 'https://avatar.iran.liara.run/',
+            'file_type' => 'image'
+        ]
+    ];
+
+    // Insert the records
+    foreach ($defaultUploads as $upload) {
+        $upload['user_id'] = $user->id;
+        UserProfileUpload::create($upload);
+    }
+
+    // Log the addition of default profile uploads
+    \Log::info('Added default profile uploads for user ID: ' . $user->id);
+}
+
 
     /**
      * Login user

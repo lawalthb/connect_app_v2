@@ -15,7 +15,7 @@ class UserSocialCircle extends Model
      *
      * @var string
      */
-    protected $table = 'user_social_circle';
+    protected $table = 'user_social_circles';
 
     /**
      * The attributes that are mass assignable.

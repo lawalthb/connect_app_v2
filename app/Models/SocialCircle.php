@@ -48,7 +48,8 @@ class SocialCircle extends Model
     protected static function booted()
     {
         static::addGlobalScope('active', function (Builder $builder) {
-            $builder->where('is_active', true)->where('deleted_flag', 'N');
+            $builder->where('social_circles.is_active', true)
+                   ->where('social_circles.deleted_flag', 'N');
         });
     }
 
@@ -73,10 +74,11 @@ class SocialCircle extends Model
      */
     public function users()
     {
-        return $this->belongsToMany(User::class, 'user_social_circle', 'social_id', 'user_id')
+        return $this->belongsToMany(User::class, 'user_social_circles', 'social_id', 'user_id')
             ->withTimestamps()
             ->withPivot(['deleted_at', 'deleted_flag'])
-            ->wherePivot('deleted_flag', 'N');
+            ->wherePivot('deleted_flag', 'N')
+            ->where('users.deleted_flag', 'N');
     }
 
     /**
@@ -95,7 +97,8 @@ class SocialCircle extends Model
      */
     public function scopeActive($query)
     {
-        return $query->where('is_active', true)->where('deleted_flag', 'N');
+        return $query->where('social_circles.is_active', true)
+                    ->where('social_circles.deleted_flag', 'N');
     }
 
     /**
@@ -106,7 +109,7 @@ class SocialCircle extends Model
      */
     public function scopeDefault($query)
     {
-        return $query->where('is_default', true);
+        return $query->where('social_circles.is_default', true);
     }
 
     /**
@@ -117,7 +120,7 @@ class SocialCircle extends Model
      */
     public function scopeOrdered($query)
     {
-        return $query->orderBy('order_by');
+        return $query->orderBy('social_circles.order_by');
     }
 
     /**

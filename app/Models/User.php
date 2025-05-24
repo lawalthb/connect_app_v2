@@ -158,10 +158,24 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function socialCircles()
     {
-        return $this->belongsToMany(SocialCircle::class, 'user_social_circle', 'user_id', 'social_id')
+        return $this->belongsToMany(SocialCircle::class, 'user_social_circles', 'user_id', 'social_id')
             ->withTimestamps()
             ->withPivot(['deleted_at', 'deleted_flag'])
-            ->wherePivot('deleted_flag', 'N');
+            ->wherePivot('deleted_flag', 'N')
+            ->withoutGlobalScopes(); // This removes the global scope that's causing the ambiguity
+    }
+
+    /**
+     * Get active social circles for the user (with proper scoping).
+     */
+    public function activeSocialCircles()
+    {
+        return $this->belongsToMany(SocialCircle::class, 'user_social_circles', 'user_id', 'social_id')
+            ->withTimestamps()
+            ->withPivot(['deleted_at', 'deleted_flag'])
+            ->wherePivot('deleted_flag', 'N')
+            ->where('social_circles.is_active', 1)
+            ->where('social_circles.deleted_flag', 'N');
     }
 
     /**
@@ -341,8 +355,8 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function scopeActive($query)
     {
-        return $query->where('is_active', true)
-            ->where('deleted_flag', 'N')
+        return $query->where('users.is_active', true)
+            ->where('users.deleted_flag', 'N')
             ->where(function($q) {
                 $q->where('is_banned', false)
                     ->orWhere(function($query) {
@@ -688,4 +702,13 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return $this->device_token;
     }
+    /**
+ * Get the profile uploads for the user.
+ */
+public function profileUploads()
+{
+    return $this->hasMany(UserProfileUpload::class)
+                ->where('deleted_flag', 'N');
+}
+
 }

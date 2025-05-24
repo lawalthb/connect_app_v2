@@ -106,7 +106,7 @@ class UsersTableSeeder extends Seeder
         // Check if the user_social_circles table exists
         if (!DB::getSchemaBuilder()->hasTable($userSocialCirclesTable)) {
             // Try alternative table names
-            $alternativeTableNames = ['user_social_circle', 'users_social_circles', 'user_socials'];
+            $alternativeTableNames = ['user_social_circles', 'users_social_circles', 'user_socials'];
             foreach ($alternativeTableNames as $tableName) {
                 if (DB::getSchemaBuilder()->hasTable($tableName)) {
                     $userSocialCirclesTable = $tableName;

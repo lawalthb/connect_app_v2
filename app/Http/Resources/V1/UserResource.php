@@ -45,18 +45,33 @@ class UserResource extends JsonResource
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
             'profile_completion' => $this->profile_completion,
+
+            // Load social circles without triggering the ambiguous query
             'social_circles' => $this->when($this->relationLoaded('socialCircles'), function () {
                 return $this->socialCircles->map(function ($circle) {
                     return [
                         'id' => $circle->id,
                         'name' => $circle->name,
-                        'icon' => $circle->icon
+                        'logo' => $circle->logo,
+                        'logo_url' => $circle->logo_url
+                    ];
+                });
+            }),
+
+            // Profile uploads
+            'profile_uploads' => $this->when($this->relationLoaded('profileUploads'), function () {
+                return $this->profileUploads->map(function ($upload) {
+                    return [
+                        'id' => $upload->id,
+                        'file_name' => $upload->file_name,
+                        'file_url' => $upload->file_url . $upload->file_name,
+                        'file_type' => $upload->file_type,
+                        'created_at' => $upload->created_at,
                     ];
                 });
             }),
         ];
     }
-
     /**
      * Get properly formatted profile URL
      *
