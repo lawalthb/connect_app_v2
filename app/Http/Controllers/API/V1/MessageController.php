@@ -1,167 +1,374 @@
 <?php
+
 namespace App\Http\Controllers\API\V1;
 
 use App\Http\Controllers\API\BaseController;
-use App\Http\Resources\V1\MessageResource;
-use App\Http\Resources\V1\UserResource;
+use App\Models\Conversation;
 use App\Models\Message;
-use App\Models\User;
+use App\Models\ConversationParticipant;
+use App\Http\Resources\V1\MessageResource;
+use App\Events\MessageSent;
+use App\Helpers\FileUploadHelper;
+use App\Http\Resources\V1\ConversationResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
 class MessageController extends BaseController
 {
     /**
-     * Send a message.
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * Get messages in a conversation
      */
-    public function send(Request $request)
+    public function index(Request $request, $conversationId)
     {
         $validator = Validator::make($request->all(), [
-            'message' => 'required_without:file',
-            'file' => 'required_without:message|file|max:10240', // 10MB max
-            'type' => 'required|string|in:text,image,video,audio',
-            'user_id' => 'required|exists:users,id',
+            'page' => 'nullable|integer|min:1',
+            'per_page' => 'nullable|integer|min:1|max:100',
         ]);
 
         if ($validator->fails()) {
-            return $this->sendError('Validation error', $validator->errors(), 422);
+            return $this->sendError('Validation Error', $validator->errors(), 422);
         }
 
-        $sender = $request->user();
-        $receiverId = $request->user_id;
+        try {
+            $conversation = Conversation::find($conversationId);
 
-        // Check if the users are connected
-        $connected = $sender->connections()->where('id', $receiverId)->exists();
+            if (!$conversation) {
+                return $this->sendError('Conversation not found', null, 404);
+            }
 
-        if (!$connected) {
-            return $this->sendError('You are not connected with this user', null, 403);
+            // Check if user is participant
+            if (!$conversation->hasParticipant($request->user()->id)) {
+                return $this->sendError('You are not a participant in this conversation', null, 403);
+            }
+
+            $perPage = $request->get('per_page', 20);
+            $messages = $conversation->messages()
+                ->with(['user', 'replyToMessage.user'])
+                ->orderBy('created_at', 'desc')
+                ->paginate($perPage);
+
+            return $this->sendResponse('Messages retrieved successfully', [
+                'messages' => MessageResource::collection($messages->items()),
+                'pagination' => [
+                    'current_page' => $messages->currentPage(),
+                    'last_page' => $messages->lastPage(),
+                    'per_page' => $messages->perPage(),
+                    'total' => $messages->total(),
+                    'has_more' => $messages->hasMorePages(),
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return $this->sendError('Failed to retrieve messages', $e->getMessage(), 500);
         }
-
-        $messageData = [
-            'sender_id' => $sender->id,
-            'receiver_id' => $receiverId,
-            'type' => $request->type,
-        ];
-
-        if ($request->hasFile('file')) {
-            $messageData['message_url'] = 'uploads/message/';
-            $messageData['message'] = $request->file('file')->store('messages', 'public');
-        } else {
-            $messageData['message'] = $request->message;
-        }
-
-        $message = Message::create($messageData);
-
-        // Create a notification for the receiver
-        $receiver = User::find($receiverId);
-        $notification = [
-            'notification' => $sender->name . ' sent you a message',
-            'notification_title' => 'New Message',
-            'notification_type' => 'new_message',
-            'object_id' => $message->id,
-            'user_id' => $receiverId,
-            'sender_id' => $sender->id,
-        ];
-
-        \App\Models\Notification::create($notification);
-
-        return $this->sendResponse('Message sent successfully', [
-            'message' => new MessageResource($message),
-        ]);
     }
 
     /**
-     * Get messages with a specific user.
-     *
-     * @param Request $request
-     * @param int $userId
-     * @return \Illuminate\Http\JsonResponse
+     * Send a message with optional file upload
      */
-    public function getMessages(Request $request, $userId)
+    public function store(Request $request, $conversationId)
     {
-        $user = $request->user();
-        $lastId = $request->query('last_id', 0);
+        // Dynamic validation based on message type
+        $rules = [
+            'type' => 'required|in:text,image,video,audio,file,location',
+            'reply_to_message_id' => 'nullable|exists:messages,id',
+        ];
 
-        // Check if the users are connected
-        $connected = $user->connections()->where('id', $userId)->exists();
+        // Add specific validation based on type
+        if ($request->type === 'text') {
+            $rules['message'] = 'required|string|max:4000';
+        } elseif (in_array($request->type, ['image', 'video', 'audio', 'file'])) {
+            $rules['file'] = 'required|file';
+            $rules['message'] = 'nullable|string|max:1000'; // Optional caption
 
-        if (!$connected) {
-            return $this->sendError('You are not connected with this user', null, 403);
+            // Add file-specific validation
+            $this->addFileValidationRules($rules, $request->type);
+        } elseif ($request->type === 'location') {
+            $rules['latitude'] = 'required|numeric|between:-90,90';
+            $rules['longitude'] = 'required|numeric|between:-180,180';
+            $rules['address'] = 'nullable|string|max:500';
+            $rules['message'] = 'nullable|string|max:1000';
         }
 
-        // Get messages
-        $messages = Message::where(function($query) use ($user, $userId) {
-            $query->where('sender_id', $user->id)
-                  ->where('receiver_id', $userId);
-        })->orWhere(function($query) use ($user, $userId) {
-            $query->where('sender_id', $userId)
-                  ->where('receiver_id', $user->id);
-        });
+        $validator = Validator::make($request->all(), $rules);
 
-        if ($lastId > 0) {
-            $messages->where('id', '<', $lastId);
+        if ($validator->fails()) {
+            return $this->sendError('Validation Error', $validator->errors(), 422);
         }
 
-        $messages = $messages->orderBy('id', 'desc')
-            ->limit(20)
-            ->get()
-            ->reverse();
+        try {
+            $conversation = Conversation::find($conversationId);
 
-        // Mark messages as received
-        Message::where('receiver_id', $user->id)
-            ->where('sender_id', $userId)
-            ->where('receive_flag', 'N')
-            ->update(['receive_flag' => 'Y']);
+            if (!$conversation) {
+                return $this->sendError('Conversation not found', null, 404);
+            }
 
-        return $this->sendResponse('Messages retrieved successfully', [
-            'messages' => MessageResource::collection($messages),
-        ]);
+            // Check if user is participant
+            if (!$conversation->hasParticipant($request->user()->id)) {
+                return $this->sendError('You are not a participant in this conversation', null, 403);
+            }
+
+            $messageData = [
+                'conversation_id' => $conversationId,
+                'user_id' => $request->user()->id,
+                'type' => $request->type,
+                'reply_to_message_id' => $request->reply_to_message_id,
+            ];
+
+            // Handle different message types
+            if ($request->type === 'text') {
+                $messageData['message'] = $request->message;
+                $messageData['metadata'] = null;
+            } elseif (in_array($request->type, ['image', 'video', 'audio', 'file'])) {
+                // Handle file upload
+                $metadata = $this->handleFileUpload($request->file('file'), $request->type, $request->user()->id);
+                $messageData['message'] = $request->message ?: null; // Optional caption
+                $messageData['metadata'] = $metadata;
+            } elseif ($request->type === 'location') {
+                $messageData['message'] = $request->message ?: null;
+                $messageData['metadata'] = [
+                    'latitude' => $request->latitude,
+                    'longitude' => $request->longitude,
+                    'address' => $request->address,
+                ];
+            }
+
+            // Create message
+            $message = Message::create($messageData);
+
+            // Update conversation's last message time
+            $conversation->update([
+                'last_message_at' => now(),
+            ]);
+
+            // Load relationships for response
+            $message->load(['user', 'replyToMessage.user']);
+
+            // Broadcast the message
+            broadcast(new MessageSent($message))->toOthers();
+
+            return $this->sendResponse('Message sent successfully', [
+                'message' => new MessageResource($message)
+            ], 201);
+        } catch (\Exception $e) {
+            return $this->sendError('Failed to send message', $e->getMessage(), 500);
+        }
     }
 
     /**
-     * Get the list of users with whom the authenticated user has exchanged messages.
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * Add file validation rules based on type
      */
-    public function getMessageUsers(Request $request)
+    private function addFileValidationRules(&$rules, $type)
     {
-        $user = $request->user();
+        $maxSizes = FileUploadHelper::getMaxFileSizes();
+        $allowedTypes = FileUploadHelper::getAllowedMimeTypes();
 
-        // Get users with whom the authenticated user has exchanged messages
-        $messageUsers = User::whereIn('id', function($query) use ($user) {
-            $query->select('sender_id')
-                  ->from('messages')
-                  ->where('receiver_id', $user->id)
-                  ->where('deleted_flag', 'N')
-                  ->union(
-                      \DB::table('messages')
-                          ->select('receiver_id')
-                          ->where('sender_id', $user->id)
-                          ->where('deleted_flag', 'N')
-                  );
-        })->get();
+        $maxSizeKB = $maxSizes[$type] * 1024; // Convert MB to KB
+        $mimeTypes = implode(',', $allowedTypes[$type]);
 
-        // Get connected users with whom the authenticated user has not exchanged messages
-        $connectedUsers = $user->connections()
-            ->whereNotIn('id', $messageUsers->pluck('id'))
-            ->get();
+        $rules['file'] .= "|max:$maxSizeKB|mimes:" . str_replace('/', ',', str_replace(['application/', 'image/', 'video/', 'audio/'], '', $mimeTypes));
 
-        // Combine the two collections
-        $allUsers = $messageUsers->merge($connectedUsers);
+        // Specific rules for each type
+        switch ($type) {
+            case 'image':
+                $rules['file'] .= '|image|dimensions:max_width=4000,max_height=4000';
+                break;
+            case 'video':
+                // Add video-specific rules if needed
+                break;
+            case 'audio':
+                // Add audio-specific rules if needed
+                break;
+        }
+    }
 
-        // Add subscription flag
-        foreach ($allUsers as $user) {
-            $user->subscription_flag = \App\Models\UserSubscription::where('user_id', $user->id)
-                ->where('expired_at', '>', now())
-                ->exists();
+    /**
+     * Handle file upload
+     */
+    private function handleFileUpload($file, $type, $userId)
+    {
+        // Validate file type
+        if (!FileUploadHelper::validateFileType($file, $type)) {
+            throw new \Exception('Invalid file type for ' . $type);
         }
 
-        return $this->sendResponse('Message users retrieved successfully', [
-            'users' => UserResource::collection($allUsers),
-        ]);
+        // Upload file and get metadata
+        return FileUploadHelper::uploadMessageFile($file, $type, $userId);
+    }
+
+       /**
+     * Mark messages as read
+     */
+    public function markAsRead(Request $request, $conversationId)
+    {
+        try {
+            $conversation = Conversation::find($conversationId);
+
+            if (!$conversation) {
+                return $this->sendError('Conversation not found', null, 404);
+            }
+
+            // Check if user is participant
+            $participant = ConversationParticipant::where('conversation_id', $conversationId)
+                ->where('user_id', $request->user()->id)
+                ->where('is_active', true)
+                ->first();
+
+            if (!$participant) {
+                return $this->sendError('You are not a participant in this conversation', null, 403);
+            }
+
+            // Update last read timestamp
+            $participant->update([
+                'last_read_at' => now(),
+            ]);
+
+            return $this->sendResponse('Messages marked as read');
+        } catch (\Exception $e) {
+            return $this->sendError('Failed to mark messages as read', $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Delete a message
+     */
+    public function destroy(Request $request, $conversationId, $messageId)
+    {
+        try {
+            $message = Message::where('id', $messageId)
+                ->where('conversation_id', $conversationId)
+                ->where('user_id', $request->user()->id)
+                ->first();
+
+            if (!$message) {
+                return $this->sendError('Message not found or you do not have permission to delete it', null, 404);
+            }
+
+            $message->update([
+                'is_deleted' => true,
+                'deleted_at' => now(),
+            ]);
+
+            return $this->sendResponse('Message deleted successfully');
+        } catch (\Exception $e) {
+            return $this->sendError('Failed to delete message', $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Send a direct message (creates conversation if needed)
+     */
+    public function sendDirectMessage(Request $request)
+    {
+        // Dynamic validation based on message type
+        $rules = [
+            'recipient_id' => 'required|exists:users,id|different:user_id',
+            'type' => 'required|in:text,image,video,audio,file,location',
+        ];
+
+        // Add specific validation based on type
+        if ($request->type === 'text') {
+            $rules['message'] = 'required|string|max:4000';
+        } elseif (in_array($request->type, ['image', 'video', 'audio', 'file'])) {
+            $rules['file'] = 'required|file';
+            $rules['message'] = 'nullable|string|max:1000'; // Optional caption
+
+            // Add file-specific validation
+            $this->addFileValidationRules($rules, $request->type);
+        } elseif ($request->type === 'location') {
+            $rules['latitude'] = 'required|numeric|between:-90,90';
+            $rules['longitude'] = 'required|numeric|between:-180,180';
+            $rules['address'] = 'nullable|string|max:500';
+            $rules['message'] = 'nullable|string|max:1000';
+        }
+
+        $validator = Validator::make($request->all(), $rules);
+
+        if ($validator->fails()) {
+            return $this->sendError('Validation Error', $validator->errors(), 422);
+        }
+
+        try {
+            $currentUser = $request->user();
+            $recipientId = $request->recipient_id;
+
+            // Check if private conversation already exists
+            $conversation = Conversation::where('type', 'private')
+                ->whereHas('participants', function ($query) use ($currentUser) {
+                    $query->where('user_id', $currentUser->id)->where('is_active', true);
+                })
+                ->whereHas('participants', function ($query) use ($recipientId) {
+                    $query->where('user_id', $recipientId)->where('is_active', true);
+                })
+                ->first();
+
+            // Create conversation if it doesn't exist
+            if (!$conversation) {
+                $conversation = Conversation::create([
+                    'type' => 'private',
+                    'created_by' => $currentUser->id,
+                ]);
+
+                // Add participants
+                ConversationParticipant::create([
+                    'conversation_id' => $conversation->id,
+                    'user_id' => $currentUser->id,
+                    'role' => 'member',
+                    'joined_at' => now(),
+                ]);
+
+                ConversationParticipant::create([
+                    'conversation_id' => $conversation->id,
+                    'user_id' => $recipientId,
+                    'role' => 'member',
+                    'joined_at' => now(),
+                ]);
+            }
+
+            $messageData = [
+                'conversation_id' => $conversation->id,
+                'user_id' => $currentUser->id,
+                'type' => $request->type,
+            ];
+
+            // Handle different message types
+            if ($request->type === 'text') {
+                $messageData['message'] = $request->message;
+                $messageData['metadata'] = null;
+            } elseif (in_array($request->type, ['image', 'video', 'audio', 'file'])) {
+                // Handle file upload
+                $metadata = $this->handleFileUpload($request->file('file'), $request->type, $currentUser->id);
+                $messageData['message'] = $request->message ?: null; // Optional caption
+                $messageData['metadata'] = $metadata;
+            } elseif ($request->type === 'location') {
+                $messageData['message'] = $request->message ?: null;
+                $messageData['metadata'] = [
+                    'latitude' => $request->latitude,
+                    'longitude' => $request->longitude,
+                    'address' => $request->address,
+                ];
+            }
+
+            // Create message
+            $message = Message::create($messageData);
+
+            // Update conversation's last message time
+            $conversation->update([
+                'last_message_at' => now(),
+            ]);
+
+            // Load relationships for response
+            $message->load(['user']);
+
+            // Broadcast the message
+            broadcast(new MessageSent($message))->toOthers();
+
+            return $this->sendResponse('Message sent successfully', [
+                'message' => new MessageResource($message),
+                'conversation' => new ConversationResource($conversation->load(['users']))
+            ], 201);
+        } catch (\Exception $e) {
+            return $this->sendError('Failed to send message', $e->getMessage(), 500);
+        }
     }
 }
+

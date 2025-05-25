@@ -711,4 +711,22 @@ public function profileUploads()
                 ->where('deleted_flag', 'N');
 }
 
+    /**
+     * Get conversations where user is a participant
+     */
+    public function conversations()
+    {
+        return $this->belongsToMany(Conversation::class, 'conversation_participants')
+                    ->withPivot(['role', 'joined_at', 'left_at', 'last_read_at', 'is_active'])
+                    ->wherePivot('is_active', true)
+                    ->orderBy('last_message_at', 'desc');
+    }
+
+    /**
+     * Get messages sent by user
+     */
+    public function messages()
+    {
+        return $this->hasMany(Message::class);
+    }
 }
