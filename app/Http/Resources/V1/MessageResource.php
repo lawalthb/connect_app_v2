@@ -84,9 +84,9 @@ class MessageResource extends JsonResource
                     'width' => $metadata['width'] ?? null,
                     'height' => $metadata['height'] ?? null,
                     'aspect_ratio' => $metadata['aspect_ratio'] ?? null,
+                    'orientation' => $metadata['orientation'] ?? null,
                 ];
-                // Generate thumbnail URL (you can implement this)
-                $fileData['thumbnail_url'] = $this->generateThumbnailUrl($metadata['file_url'] ?? null);
+                $fileData['thumbnail_url'] = $metadata['thumbnail_url'] ?? null;
                 break;
 
             case 'video':
