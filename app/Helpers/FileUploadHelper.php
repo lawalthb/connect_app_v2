@@ -57,15 +57,15 @@ class FileUploadHelper
         if ($type === 'image') {
             $uploaded = self::processAndUploadImage($file, $fullPath, $extension);
         } else {
-            // Upload non-image files directly
-            $uploaded = Storage::disk('public')->put($fullPath, file_get_contents($file));
+            // Upload non-image files directly to S3
+            $uploaded = Storage::disk('s3')->put($fullPath, file_get_contents($file));
         }
 
         if (!$uploaded) {
             throw new \Exception('Failed to upload file');
         }
 
-        $fileUrl = Storage::disk('public')->url($fullPath);
+        $fileUrl = Storage::disk('s3')->url($fullPath);
 
         // Prepare metadata
         $metadata = [
@@ -82,7 +82,7 @@ class FileUploadHelper
         if ($type === 'image') {
             $metadata = array_merge($metadata, self::getImageMetadata($file));
             // Add thumbnail URL
-            $metadata['thumbnail_url'] = self::generateThumbnail($fullPath, $extension);
+            $metadata['thumbnail_url'] = self::generateThumbnail($file, $fullPath, $extension);
         } elseif ($type === 'video') {
             $metadata = array_merge($metadata, self::getVideoMetadata($file));
         }
@@ -91,7 +91,7 @@ class FileUploadHelper
     }
 
     /**
-     * Process and upload image with Intervention Image v3
+     * Process and upload image with Intervention Image v3 to S3
      *
      * @param UploadedFile $file
      * @param string $fullPath
@@ -122,24 +122,35 @@ class FileUploadHelper
                 default => $image->encode(new JpegEncoder(quality: 85))
             };
 
-            // Save to storage
-            return Storage::disk('public')->put($fullPath, $encodedImage->toString());
+            // Upload to S3 with proper content type
+            $uploaded = Storage::disk('s3')->put($fullPath, $encodedImage->toString(), [
+                'ContentType' => 'image/' . $extension,
+                'CacheControl' => 'max-age=31536000', // 1 year cache
+                'ACL' => 'public-read', // Make file publicly accessible
+            ]);
+
+            return $uploaded;
 
         } catch (\Exception $e) {
             \Log::error('Image processing failed: ' . $e->getMessage());
             // Fallback to direct upload if image processing fails
-            return Storage::disk('public')->put($fullPath, file_get_contents($file));
+            return Storage::disk('s3')->put($fullPath, file_get_contents($file), [
+                'ContentType' => $file->getMimeType(),
+                'CacheControl' => 'max-age=31536000',
+                'ACL' => 'public-read',
+            ]);
         }
     }
 
     /**
-     * Generate thumbnail for images
+     * Generate thumbnail for images (S3 compatible)
      *
+     * @param UploadedFile $originalFile
      * @param string $fullPath
      * @param string $extension
      * @return string|null
      */
-    private static function generateThumbnail(string $fullPath, string $extension): ?string
+    private static function generateThumbnail(UploadedFile $originalFile, string $fullPath, string $extension): ?string
     {
         try {
             // Create thumbnail path
@@ -147,8 +158,8 @@ class FileUploadHelper
 
             $manager = self::getImageManager();
 
-            // Read the uploaded image
-            $image = $manager->read(Storage::disk('public')->path($fullPath));
+            // Read from the original uploaded file (not from S3)
+            $image = $manager->read($originalFile->getPathname());
 
             // Create thumbnail (300x300 max, maintain aspect ratio)
             $thumbnail = $image->resize(300, 300, function ($constraint) {
@@ -164,11 +175,15 @@ class FileUploadHelper
                 default => $thumbnail->encode(new JpegEncoder(quality: 80))
             };
 
-            // Save thumbnail
-            $thumbnailSaved = Storage::disk('public')->put($thumbnailPath, $encodedThumbnail->toString());
+            // Upload thumbnail to S3
+            $thumbnailSaved = Storage::disk('s3')->put($thumbnailPath, $encodedThumbnail->toString(), [
+                'ContentType' => 'image/' . $extension,
+                'CacheControl' => 'max-age=31536000',
+                'ACL' => 'public-read',
+            ]);
 
             if ($thumbnailSaved) {
-                return Storage::disk('public')->url($thumbnailPath);
+                return Storage::disk('s3')->url($thumbnailPath);
             }
 
         } catch (\Exception $e) {
@@ -357,7 +372,7 @@ class FileUploadHelper
     }
 
     /**
-     * Create optimized image for different use cases
+     * Create optimized image for different use cases (S3 compatible)
      *
      * @param UploadedFile $file
      * @param array $sizes
@@ -389,10 +404,16 @@ class FileUploadHelper
                 $path = 'messages/images/variants/' . $filename;
 
                 $encoded = $variant->encode(new JpegEncoder(quality: 85));
-                Storage::disk('public')->put($path, $encoded->toString());
+
+                // Upload variant to S3
+                Storage::disk('s3')->put($path, $encoded->toString(), [
+                    'ContentType' => 'image/jpeg',
+                    'CacheControl' => 'max-age=31536000',
+                    'ACL' => 'public-read',
+                ]);
 
                 $variants[$sizeName] = [
-                    'url' => Storage::disk('public')->url($path),
+                    'url' => Storage::disk('s3')->url($path),
                     'path' => $path,
                     'width' => $variant->width(),
                     'height' => $variant->height(),
@@ -403,6 +424,22 @@ class FileUploadHelper
         }
 
         return $variants;
+    }
+
+    /**
+     * Delete file from S3
+     *
+     * @param string $filePath
+     * @return bool
+     */
+    public static function deleteFile(string $filePath): bool
+    {
+        try {
+            return Storage::disk('s3')->delete($filePath);
+        } catch (\Exception $e) {
+            \Log::error('Failed to delete file from S3: ' . $e->getMessage());
+            return false;
+        }
     }
 
     /**
