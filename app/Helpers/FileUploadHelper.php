@@ -4,7 +4,6 @@ namespace App\Helpers;
 
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Http\UploadedFile;
-use Intervention\Image\Facades\Image;
 
 class FileUploadHelper
 {
@@ -30,14 +29,14 @@ class FileUploadHelper
         $uploadPath = self::getUploadPath($type);
         $fullPath = $uploadPath . '/' . $filename;
 
-        // Upload to S3 (or local storage)
-        $uploaded = Storage::disk('s3')->put($fullPath, file_get_contents($file));
+        // Upload to local storage for testing (change to 's3' for production)
+        $uploaded = Storage::disk('public')->put($fullPath, file_get_contents($file));
 
         if (!$uploaded) {
             throw new \Exception('Failed to upload file');
         }
 
-        $fileUrl = Storage::disk('s3')->url($fullPath);
+        $fileUrl = Storage::disk('public')->url($fullPath);
 
         // Prepare metadata
         $metadata = [
@@ -85,7 +84,7 @@ class FileUploadHelper
     }
 
     /**
-     * Get image metadata
+     * Get image metadata using PHP's built-in functions
      *
      * @param UploadedFile $file
      * @return array
@@ -93,15 +92,21 @@ class FileUploadHelper
     private static function getImageMetadata(UploadedFile $file): array
     {
         try {
-            $image = Image::make($file);
-            return [
-                'width' => $image->width(),
-                'height' => $image->height(),
-                'aspect_ratio' => round($image->width() / $image->height(), 2),
-            ];
+            // Use PHP's built-in getimagesize function instead of Intervention Image
+            $imageInfo = getimagesize($file->getPathname());
+
+            if ($imageInfo !== false) {
+                return [
+                    'width' => $imageInfo[0],
+                    'height' => $imageInfo[1],
+                    'aspect_ratio' => $imageInfo[1] > 0 ? round($imageInfo[0] / $imageInfo[1], 2) : 1,
+                ];
+            }
         } catch (\Exception $e) {
-            return [];
+            \Log::warning('Failed to get image metadata: ' . $e->getMessage());
         }
+
+        return [];
     }
 
     /**
@@ -112,9 +117,8 @@ class FileUploadHelper
      */
     private static function getVideoMetadata(UploadedFile $file): array
     {
-        // You can use FFMpeg or similar library to get video metadata
         return [
-            'duration' => null, // Implement if needed
+            'duration' => null, // Can implement with FFMpeg later
             'format' => $file->getClientOriginalExtension(),
         ];
     }
