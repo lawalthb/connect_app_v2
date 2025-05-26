@@ -22,24 +22,22 @@ class Message extends Model
         'deleted_at'
     ];
 
+    /**
+     * The attributes that should be cast.
+     *
+     * @var array
+     */
     protected $casts = [
         'metadata' => 'array',
         'is_edited' => 'boolean',
         'is_deleted' => 'boolean',
-        'edited_at' => 'datetime',
-        'deleted_at' => 'datetime'
+        'edited_at' => 'datetime', // Important: Ensures this is a Carbon instance
+        'deleted_at' => 'datetime', // Important: Ensures this is a Carbon instance
+        // created_at and updated_at are typically handled by Eloquent automatically as Carbon instances
     ];
 
     /**
-     * Get the conversation this message belongs to
-     */
-    public function conversation()
-    {
-        return $this->belongsTo(Conversation::class);
-    }
-
-    /**
-     * Get the user who sent the message
+     * Get the user who sent the message.
      */
     public function user()
     {
@@ -47,7 +45,15 @@ class Message extends Model
     }
 
     /**
-     * Get the message this is replying to
+     * Get the conversation this message belongs to.
+     */
+    public function conversation()
+    {
+        return $this->belongsTo(Conversation::class);
+    }
+
+    /**
+     * Get the message this is replying to.
      */
     public function replyToMessage()
     {
@@ -55,7 +61,7 @@ class Message extends Model
     }
 
     /**
-     * Get replies to this message
+     * Get replies to this message.
      */
     public function replies()
     {

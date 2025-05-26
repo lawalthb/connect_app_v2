@@ -4,187 +4,182 @@ namespace App\Helpers;
 
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use App\Models\User; // Import User model
 
 class TimezoneHelper
 {
     /**
-     * Convert a timestamp to user's timezone
+     * Convert a datetime string or Carbon instance to the specified user's timezone.
+     * If no user is provided, it defaults to the authenticated user's timezone.
+     * If no authenticated user or user timezone is invalid, defaults to UTC.
      *
-     * @param mixed $timestamp
-     * @param string|null $userTimezone
-     * @param string $format
-     * @return string
+     * @param string|Carbon|null $datetime The datetime to convert.
+     * @param User|null $targetUser The user whose timezone should be used for conversion.
+     * @return Carbon|null Null if input datetime is null.
      */
-    public static function convertToUserTimezone($timestamp, $userTimezone = null, $format = 'Y-m-d H:i:s')
+    public static function convertToUserTimezone($datetime, ?User $targetUser = null): ?Carbon
     {
-        if (!$timestamp) {
+        if (is_null($datetime)) {
             return null;
         }
 
-        // Get user timezone
-        $timezone = $userTimezone ?? self::getUserTimezone();
+        $readerTimezone = config('app.timezone', 'UTC'); // Default to app's timezone or UTC
 
-        // Convert timestamp to Carbon instance
-        $carbon = $timestamp instanceof Carbon ? $timestamp : Carbon::parse($timestamp);
-
-        // Convert to user timezone and format
-        return $carbon->setTimezone($timezone)->format($format);
-    }
-
-    /**
-     * Convert a timestamp to user's timezone and return Carbon instance
-     *
-     * @param mixed $timestamp
-     * @param string|null $userTimezone
-     * @return Carbon
-     */
-    public static function convertToUserTimezoneCarbon($timestamp, $userTimezone = null)
-    {
-        if (!$timestamp) {
-            return null;
+        if ($targetUser) {
+            $tz = $targetUser->getTimezone(); // Use the getTimezone() method from User model
+            if (self::isValidTimezone($tz)) {
+                $readerTimezone = $tz;
+            } else {
+                Log::warning("Invalid timezone '{$tz}' for target user ID {$targetUser->id}. Defaulting to {$readerTimezone}.");
+            }
+        } elseif (Auth::check()) {
+            /** @var User $authUser */
+            $authUser = Auth::user();
+            $tz = $authUser->getTimezone();
+            if (self::isValidTimezone($tz)) {
+                $readerTimezone = $tz;
+            } else {
+                Log::warning("Invalid timezone '{$tz}' for authenticated user ID {$authUser->id}. Defaulting to {$readerTimezone}.");
+            }
         }
 
-        // Get user timezone
-        $timezone = $userTimezone ?? self::getUserTimezone();
-
-        // Convert timestamp to Carbon instance
-        $carbon = $timestamp instanceof Carbon ? $timestamp : Carbon::parse($timestamp);
-
-        // Convert to user timezone
-        return $carbon->setTimezone($timezone);
+        try {
+            // Ensure the input datetime is a Carbon instance, then convert timezone
+            return Carbon::parse($datetime)->setTimezone($readerTimezone);
+        } catch (\Exception $e) {
+            Log::error("Timezone conversion error for datetime '{$datetime}' to '{$readerTimezone}': " . $e->getMessage(), [
+                'datetime_original' => $datetime,
+                'target_timezone' => $readerTimezone,
+                'user_id' => $targetUser ? $targetUser->id : (Auth::check() ? Auth::id() : 'guest')
+            ]);
+            // Fallback: return the original datetime parsed, possibly in UTC or app default
+            return Carbon::parse($datetime)->setTimezone(config('app.timezone', 'UTC'));
+        }
     }
 
     /**
-     * Get the current authenticated user's timezone
+     * Format a datetime string or Carbon instance in the specified user's timezone.
      *
-     * @return string
-     */
-    public static function getUserTimezone()
-    {
-        $user = Auth::user();
-        return $user && $user->timezone ? $user->timezone : config('app.timezone', 'UTC');
-    }
-
-    /**
-     * Get current time in user's timezone
-     *
-     * @param string|null $userTimezone
-     * @return Carbon
-     */
-    public static function now($userTimezone = null)
-    {
-        $timezone = $userTimezone ?? self::getUserTimezone();
-        return Carbon::now($timezone);
-    }
-
-    /**
-     * Format time for display with timezone info
-     *
-     * @param mixed $timestamp
-     * @param string|null $userTimezone
+     * @param string|Carbon|null $datetime
      * @param string $format
-     * @return string
+     * @param User|null $targetUser
+     * @return string|null
      */
-    public static function formatForDisplay($timestamp, $userTimezone = null, $format = 'M j, Y g:i A T')
+    public static function formatInUserTimezone($datetime, string $format = 'Y-m-d H:i:s', ?User $targetUser = null): ?string
     {
-        return self::convertToUserTimezone($timestamp, $userTimezone, $format);
+        $carbonDate = self::convertToUserTimezone($datetime, $targetUser);
+        return $carbonDate ? $carbonDate->format($format) : null;
     }
 
     /**
-     * Get relative time (e.g., "2 hours ago") in user's timezone
+     * Get human-readable diff for a datetime string or Carbon instance in the user's timezone.
      *
-     * @param mixed $timestamp
-     * @param string|null $userTimezone
-     * @return string
+     * @param string|Carbon|null $datetime
+     * @param User|null $targetUser
+     * @return string|null
      */
-    public static function diffForHumans($timestamp, $userTimezone = null)
+    public static function humanInUserTimezone($datetime, ?User $targetUser = null): ?string
     {
-        $carbon = self::convertToUserTimezoneCarbon($timestamp, $userTimezone);
-        return $carbon ? $carbon->diffForHumans() : null;
+        $carbonDate = self::convertToUserTimezone($datetime, $targetUser);
+        return $carbonDate ? $carbonDate->diffForHumans() : null;
     }
 
     /**
-     * Get list of common timezones
+     * Check if a timezone identifier is valid.
      *
+     * @param string|null $timezone
+     * @return bool
+     */
+    public static function isValidTimezone($timezone): bool
+    {
+        if (empty($timezone)) {
+            return false;
+        }
+        return in_array($timezone, timezone_identifiers_list());
+    }
+
+    /**
+     * Get list of common timezones.
      * @return array
      */
-    public static function getTimezoneList()
+    public static function getTimezonesList(): array
     {
+        // This list can be customized or fetched dynamically
         return [
-            // Universal
-            'UTC' => 'UTC',
-            'Etc/GMT+12' => 'GMT-12:00 International Date Line West',
-            'Etc/GMT+1' => 'GMT-01:00',
-            'Etc/GMT-1' => 'GMT+01:00',
+           // Universal
+           'UTC' => 'UTC',
+           'Etc/GMT+12' => 'GMT-12:00 International Date Line West',
+           'Etc/GMT+1' => 'GMT-01:00',
+           'Etc/GMT-1' => 'GMT+01:00',
 
-            // North America
-            'America/New_York' => 'Eastern Time (US & Canada)',
-            'America/Detroit' => 'Eastern Time - Detroit',
-            'America/Toronto' => 'Eastern Time - Toronto',
-            'America/Chicago' => 'Central Time (US & Canada)',
-            'America/Denver' => 'Mountain Time (US & Canada)',
-            'America/Los_Angeles' => 'Pacific Time (US & Canada)',
-            'America/Phoenix' => 'Arizona',
-            'America/Anchorage' => 'Alaska',
-            'America/Honolulu' => 'Hawaii',
+           // North America
+           'America/New_York' => 'Eastern Time (US & Canada)',
+           'America/Detroit' => 'Eastern Time - Detroit',
+           'America/Toronto' => 'Eastern Time - Toronto',
+           'America/Chicago' => 'Central Time (US & Canada)',
+           'America/Denver' => 'Mountain Time (US & Canada)',
+           'America/Los_Angeles' => 'Pacific Time (US & Canada)',
+           'America/Phoenix' => 'Arizona',
+           'America/Anchorage' => 'Alaska',
+           'America/Honolulu' => 'Hawaii',
 
-            // South America
-            'America/Sao_Paulo' => 'Brasilia',
-            'America/Buenos_Aires' => 'Buenos Aires',
-            'America/Bogota' => 'Bogotá',
-            'America/Caracas' => 'Caracas',
-            'America/Lima' => 'Lima',
-            'America/Mexico_City' => 'Mexico City',
+           // South America
+           'America/Sao_Paulo' => 'Brasilia',
+           'America/Buenos_Aires' => 'Buenos Aires',
+           'America/Bogota' => 'Bogotá',
+           'America/Caracas' => 'Caracas',
+           'America/Lima' => 'Lima',
+           'America/Mexico_City' => 'Mexico City',
 
-            // Europe
-            'Europe/London' => 'London',
-            'Europe/Paris' => 'Paris',
-            'Europe/Berlin' => 'Berlin',
-            'Europe/Madrid' => 'Madrid',
-            'Europe/Rome' => 'Rome',
-            'Europe/Moscow' => 'Moscow',
-            'Europe/Istanbul' => 'Istanbul',
-            'Europe/Warsaw' => 'Warsaw',
+           // Europe
+           'Europe/London' => 'London',
+           'Europe/Paris' => 'Paris',
+           'Europe/Berlin' => 'Berlin',
+           'Europe/Madrid' => 'Madrid',
+           'Europe/Rome' => 'Rome',
+           'Europe/Moscow' => 'Moscow',
+           'Europe/Istanbul' => 'Istanbul',
+           'Europe/Warsaw' => 'Warsaw',
 
-            // Africa
-            'Africa/Lagos' => 'Lagos',
-            'Africa/Cairo' => 'Cairo',
-            'Africa/Nairobi' => 'Nairobi',
-            'Africa/Johannesburg' => 'Johannesburg',
-            'Africa/Casablanca' => 'Casablanca',
-            'Africa/Accra' => 'Accra',
+           // Africa
+           'Africa/Lagos' => 'Lagos',
+           'Africa/Cairo' => 'Cairo',
+           'Africa/Nairobi' => 'Nairobi',
+           'Africa/Johannesburg' => 'Johannesburg',
+           'Africa/Casablanca' => 'Casablanca',
+           'Africa/Accra' => 'Accra',
 
-            // Asia
-            'Asia/Tokyo' => 'Tokyo',
-            'Asia/Shanghai' => 'Beijing',
-            'Asia/Hong_Kong' => 'Hong Kong',
-            'Asia/Singapore' => 'Singapore',
-            'Asia/Kuala_Lumpur' => 'Kuala Lumpur',
-            'Asia/Seoul' => 'Seoul',
-            'Asia/Bangkok' => 'Bangkok',
-            'Asia/Dubai' => 'Dubai',
-            'Asia/Kolkata' => 'Mumbai, Kolkata, New Delhi',
-            'Asia/Manila' => 'Manila',
-            'Asia/Jakarta' => 'Jakarta',
+           // Asia
+           'Asia/Tokyo' => 'Tokyo',
+           'Asia/Shanghai' => 'Beijing',
+           'Asia/Hong_Kong' => 'Hong Kong',
+           'Asia/Singapore' => 'Singapore',
+           'Asia/Kuala_Lumpur' => 'Kuala Lumpur',
+           'Asia/Seoul' => 'Seoul',
+           'Asia/Bangkok' => 'Bangkok',
+           'Asia/Dubai' => 'Dubai',
+           'Asia/Kolkata' => 'Mumbai, Kolkata, New Delhi',
+           'Asia/Manila' => 'Manila',
+           'Asia/Jakarta' => 'Jakarta',
 
-            // Oceania / Australia
-            'Australia/Sydney' => 'Sydney',
-            'Australia/Melbourne' => 'Melbourne',
-            'Australia/Brisbane' => 'Brisbane',
-            'Pacific/Auckland' => 'Auckland',
-            'Pacific/Fiji' => 'Fiji',
+           // Oceania / Australia
+           'Australia/Sydney' => 'Sydney',
+           'Australia/Melbourne' => 'Melbourne',
+           'Australia/Brisbane' => 'Brisbane',
+           'Pacific/Auckland' => 'Auckland',
+           'Pacific/Fiji' => 'Fiji',
 
-            // Middle East
-            'Asia/Riyadh' => 'Riyadh',
-            'Asia/Tehran' => 'Tehran',
-            'Asia/Jerusalem' => 'Jerusalem',
-            'Asia/Kuwait' => 'Kuwait',
+           // Middle East
+           'Asia/Riyadh' => 'Riyadh',
+           'Asia/Tehran' => 'Tehran',
+           'Asia/Jerusalem' => 'Jerusalem',
+           'Asia/Kuwait' => 'Kuwait',
 
-            // Others
-            'Antarctica/Palmer' => 'Antarctica - Palmer',
-            'Atlantic/Azores' => 'Azores',
-            'Indian/Mauritius' => 'Mauritius',
+           // Others
+           'Antarctica/Palmer' => 'Antarctica - Palmer',
+           'Atlantic/Azores' => 'Azores',
+           'Indian/Mauritius' => 'Mauritius',
         ];
-
     }
 }

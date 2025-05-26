@@ -729,4 +729,54 @@ public function profileUploads()
     {
         return $this->hasMany(Message::class);
     }
+
+    /**
+     * Get the user's timezone
+     *
+     * @return string
+     */
+    public function getTimezone(): string
+    {
+        $userTimezone = $this->timezone;
+
+        // Fallback to application's default timezone if user's timezone is not set or invalid
+        if (empty($userTimezone) || !in_array($userTimezone, timezone_identifiers_list())) {
+            return config('app.timezone', 'UTC');
+        }
+        return $userTimezone;
+    }
+
+    /**
+     * Convert a date to user's timezone
+     *
+     * @param $date
+     * @return Carbon
+     */
+    public function convertToUserTimezone($date): Carbon
+    {
+        return Carbon::parse($date)->setTimezone($this->getTimezone());
+    }
+
+    /**
+     * Get formatted date in user's timezone
+     *
+     * @param $date
+     * @param string $format
+     * @return string
+     */
+    public function formatInUserTimezone($date, string $format = 'Y-m-d H:i:s'): string
+    {
+        return $this->convertToUserTimezone($date)->format($format);
+    }
+
+    /**
+     * Get human readable date in user's timezone
+     *
+     * @param $date
+     * @return string
+     */
+    public function humanDateInUserTimezone($date): string
+    {
+        return $this->convertToUserTimezone($date)->diffForHumans();
+    }
 }
