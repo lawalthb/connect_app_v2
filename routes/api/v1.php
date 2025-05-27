@@ -140,14 +140,35 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
 
-     // Call routes
-     Route::prefix('calls')->group(function () {
+     //Call routes
+    Route::prefix('calls')->group(function () {
+        // Call management
         Route::post('initiate', [CallController::class, 'initiate']);
         Route::post('{call}/answer', [CallController::class, 'answer']);
-        Route::post('{call}/end', [CallController::class, 'end']);
         Route::post('{call}/reject', [CallController::class, 'reject']);
-        Route::get('conversation/{conversation}/history', [CallController::class, 'history']);
-        Route::get('recent', [CallController::class, 'recentCalls']);
+        Route::post('{call}/end', [CallController::class, 'end']);
+
+        // Call history
+        Route::get('history', [CallController::class, 'getUserCallHistory']);
+        Route::get('conversation/{conversation}/history', [CallController::class, 'getConversationCallHistory']);
+
+        // Call participants
+        Route::get('{call}/participants', [CallController::class, 'getCallParticipants']);
+        Route::post('{call}/participants/{user}/kick', [CallController::class, 'kickParticipant']);
+    });
+
+    // Test service - I will remove this in production
+    Route::get('test-agora', function () {
+        return \App\Helpers\AgoraHelper::testTokenGeneration();
+    });
+
+    Route::get('test-agora-user/{userId}', function ($userId) {
+        return \App\Helpers\AgoraHelper::generateTokenForUser(
+            $userId,
+            'test_channel_' . time(),
+            3600,
+            'publisher'
+        );
     });
 
 

@@ -14,6 +14,7 @@ use App\Events\CallEnded;
 use App\Events\CallMissed;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 
 class CallController extends BaseController
@@ -417,4 +418,228 @@ class CallController extends BaseController
             }),
         ];
     }
+
+
+
+    public function getUserCallHistory(Request $request)
+    {
+        try {
+            $user = $request->user();
+            $perPage = $request->get('per_page', 20);
+
+            $calls = Call::whereHas('participants', function ($query) use ($user) {
+                    $query->where('user_id', $user->id);
+                })
+                ->with([
+                    'conversation:id,name',
+                    'initiator:id,name,username,profile,profile_url',
+                    'participants.user:id,name,username,profile,profile_url'
+                ])
+                ->orderBy('started_at', 'desc')
+                ->paginate($perPage);
+
+            $formattedCalls = $calls->map(function ($call) use ($user) {
+                $userParticipant = $call->participants->where('user_id', $user->id)->first();
+
+                return [
+                    'id' => $call->id,
+                    'call_type' => $call->call_type,
+                    'status' => $call->status,
+                    'duration' => $call->duration,
+                    'started_at' => $call->started_at?->toISOString(),
+                    'ended_at' => $call->ended_at?->toISOString(),
+                    'conversation' => [
+                        'id' => $call->conversation->id,
+                        'name' => $call->conversation->name ?? 'Unknown'
+                    ],
+                    'initiator' => [
+                        'id' => $call->initiator->id,
+                        'name' => $call->initiator->name,
+                        'username' => $call->initiator->username,
+                        'profile_url' => $call->initiator->profile_url,
+                    ],
+                    'user_status' => $userParticipant?->status ?? 'not_joined',
+                    'participants_count' => $call->participants->count(),
+                    'is_missed' => $call->status === 'missed' ||
+                                  ($userParticipant && $userParticipant->status === 'invited' && $call->status === 'ended')
+                ];
+            });
+
+            return $this->sendResponse('Call history retrieved successfully', [
+                'calls' => $formattedCalls,
+                'pagination' => [
+                    'current_page' => $calls->currentPage(),
+                    'last_page' => $calls->lastPage(),
+                    'per_page' => $calls->perPage(),
+                    'total' => $calls->total(),
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to get user call history', [
+                'user_id' => $request->user()->id ?? null,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return $this->sendError('Failed to retrieve call history', $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Get call history for a specific conversation
+     */
+    public function getConversationCallHistory(Request $request, Conversation $conversation)
+    {
+        try {
+            $user = $request->user();
+
+            // Check if user is part of the conversation
+            if (!$conversation->users->contains($user->id)) {
+                return $this->sendError('You are not a participant in this conversation', null, 403);
+            }
+
+            $perPage = $request->get('per_page', 20);
+
+            $calls = Call::where('conversation_id', $conversation->id)
+                ->with([
+                    'initiator:id,name,username,profile,profile_url',
+                    'participants.user:id,name,username,profile,profile_url'
+                ])
+                ->orderBy('started_at', 'desc')
+                ->paginate($perPage);
+
+            $formattedCalls = $calls->map(function ($call) use ($user) {
+                return $this->formatCallData($call, $user);
+            });
+
+            return $this->sendResponse('Conversation call history retrieved successfully', [
+                'calls' => $formattedCalls,
+                'pagination' => [
+                    'current_page' => $calls->currentPage(),
+                    'last_page' => $calls->lastPage(),
+                    'per_page' => $calls->perPage(),
+                    'total' => $calls->total(),
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to get conversation call history', [
+                'conversation_id' => $conversation->id,
+                'user_id' => $request->user()->id ?? null,
+                'error' => $e->getMessage()
+            ]);
+
+            return $this->sendError('Failed to retrieve conversation call history', $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Get call participants
+     */
+    public function getCallParticipants(Request $request, Call $call)
+    {
+        try {
+            $user = $request->user();
+
+            // Check if user is part of the call
+            $userParticipant = $call->participants()->where('user_id', $user->id)->first();
+            if (!$userParticipant) {
+                return $this->sendError('You are not a participant in this call', null, 403);
+            }
+
+            $participants = $call->participants()
+                ->with('user:id,name,username,profile,profile_url')
+                ->get()
+                ->map(function ($participant) {
+                    return [
+                        'id' => $participant->id,
+                        'user' => [
+                            'id' => $participant->user->id,
+                            'name' => $participant->user->name,
+                            'username' => $participant->user->username,
+                            'profile_url' => $participant->user->profile_url,
+                        ],
+                        'status' => $participant->status,
+                        'agora_uid' => $participant->agora_uid,
+                        'joined_at' => $participant->joined_at?->toISOString(),
+                        'left_at' => $participant->left_at?->toISOString(),
+                    ];
+                });
+
+            return $this->sendResponse('Call participants retrieved successfully', [
+                'participants' => $participants
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to get call participants', [
+                'call_id' => $call->id,
+                'error' => $e->getMessage()
+            ]);
+
+            return $this->sendError('Failed to retrieve call participants', $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Kick participant from call (for group calls)
+     */
+    public function kickParticipant(Request $request, Call $call, $userId)
+    {
+        try {
+            $user = $request->user();
+
+            // Check if user is the call initiator
+            if ($call->initiated_by !== $user->id) {
+                return $this->sendError('Only the call initiator can kick participants', null, 403);
+            }
+
+            // Check if call is active
+            if (!in_array($call->status, ['initiated', 'connected'])) {
+                return $this->sendError('Cannot kick participants from inactive call', null, 400);
+            }
+
+            $participant = CallParticipant::where('call_id', $call->id)
+                ->where('user_id', $userId)
+                ->first();
+
+            if (!$participant) {
+                return $this->sendError('Participant not found in this call', null, 404);
+            }
+
+            if ($participant->user_id === $user->id) {
+                return $this->sendError('You cannot kick yourself from the call', null, 400);
+            }
+
+            // Update participant status
+            $participant->update([
+                'status' => 'kicked',
+                'left_at' => now()
+            ]);
+
+            // Broadcast participant kicked event
+            // broadcast(new ParticipantKicked($call, $participant))->toOthers();
+
+            return $this->sendResponse('Participant kicked successfully', [
+                'participant' => [
+                    'user_id' => $participant->user_id,
+                    'status' => $participant->status
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to kick participant', [
+                'call_id' => $call->id,
+                'user_id' => $userId,
+                'error' => $e->getMessage()
+            ]);
+
+            return $this->sendError('Failed to kick participant', $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Format call data for response
+     */
+  
 }
