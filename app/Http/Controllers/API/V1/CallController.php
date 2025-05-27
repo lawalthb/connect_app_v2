@@ -641,5 +641,5 @@ class CallController extends BaseController
     /**
      * Format call data for response
      */
-  
+
 }
