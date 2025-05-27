@@ -9,6 +9,17 @@ class Message extends Model
 {
     use HasFactory;
 
+    // Message types
+    const TYPE_TEXT = 'text';
+    const TYPE_IMAGE = 'image';
+    const TYPE_VIDEO = 'video';
+    const TYPE_AUDIO = 'audio';
+    const TYPE_FILE = 'file';
+    const TYPE_LOCATION = 'location';
+    const TYPE_CALL_STARTED = 'call_started';
+    const TYPE_CALL_ENDED = 'call_ended';
+    const TYPE_CALL_MISSED = 'call_missed';
+
     protected $fillable = [
         'conversation_id',
         'user_id',
@@ -66,5 +77,21 @@ class Message extends Model
     public function replies()
     {
         return $this->hasMany(Message::class, 'reply_to_message_id');
+    }
+
+    /**
+     * Get the call related to this message (if it's a call message)
+     */
+    public function call()
+    {
+        return $this->belongsTo(Call::class, 'metadata->call_id');
+    }
+
+    /**
+     * Check if message is call-related
+     */
+    public function isCallMessage(): bool
+    {
+        return in_array($this->type, [self::TYPE_CALL_STARTED, self::TYPE_CALL_ENDED, self::TYPE_CALL_MISSED]);
     }
 }

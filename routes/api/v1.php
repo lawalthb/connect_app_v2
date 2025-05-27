@@ -3,6 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\API\V1\AuthController;
+use App\Http\Controllers\API\V1\CallController;
 use App\Http\Controllers\API\V1\UserController;
 use App\Http\Controllers\API\V1\PostController;
 use App\Http\Controllers\API\V1\CommentController;
@@ -137,4 +138,17 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [ConversationController::class, 'index']); // Alias for conversations
         Route::post('/send', [MessageController::class, 'sendDirectMessage']); // For quick messaging
     });
+
+
+     // Call routes
+     Route::prefix('calls')->group(function () {
+        Route::post('initiate', [CallController::class, 'initiate']);
+        Route::post('{call}/answer', [CallController::class, 'answer']);
+        Route::post('{call}/end', [CallController::class, 'end']);
+        Route::post('{call}/reject', [CallController::class, 'reject']);
+        Route::get('conversation/{conversation}/history', [CallController::class, 'history']);
+        Route::get('recent', [CallController::class, 'recentCalls']);
+    });
+
+
 });

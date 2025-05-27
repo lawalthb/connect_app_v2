@@ -99,4 +99,28 @@ class Conversation extends Model
     {
         return $this->participants()->where('user_id', $userId)->where('is_active', true)->exists();
     }
+
+    /**
+     * Get all calls in this conversation
+     */
+    public function calls()
+    {
+        return $this->hasMany(Call::class);
+    }
+
+    /**
+     * Get the latest call
+     */
+    public function latestCall()
+    {
+        return $this->hasOne(Call::class)->latest();
+    }
+
+    /**
+     * Check if conversation has an active call
+     */
+    public function hasActiveCall(): bool
+    {
+        return $this->calls()->whereIn('status', ['initiated', 'ringing', 'connected'])->exists();
+    }
 }

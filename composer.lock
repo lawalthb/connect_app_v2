@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "10a60c27d2cc54351c9a5dafb27fe068",
+    "content-hash": "6ad474d166d6966fe00733f7a1557f71",
     "packages": [
         {
             "name": "aws/aws-crt-php",
@@ -233,6 +233,40 @@
                 }
             ],
             "time": "2025-02-13T15:07:54+00:00"
+        },
+        {
+            "name": "boogiefromzk/agora-token",
+            "version": "v1.0.2",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/boogiefromzk/agora-token-php.git",
+                "reference": "a35afcc3dc6b63081f4cf55ce8d8f6a4cf736b11"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/boogiefromzk/agora-token-php/zipball/a35afcc3dc6b63081f4cf55ce8d8f6a4cf736b11",
+                "reference": "a35afcc3dc6b63081f4cf55ce8d8f6a4cf736b11",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=7.1"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "BoogieFromZk\\AgoraToken\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "ISC"
+            ],
+            "description": "Intended to make Agora Tools for PHP repository folder as a package installable with Composer.",
+            "support": {
+                "issues": "https://github.com/boogiefromzk/agora-token-php/issues",
+                "source": "https://github.com/boogiefromzk/agora-token-php/tree/v1.0.2"
+            },
+            "time": "2024-09-11T09:13:45+00:00"
         },
         {
             "name": "brick/math",

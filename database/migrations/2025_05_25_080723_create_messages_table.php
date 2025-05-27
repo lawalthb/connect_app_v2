@@ -13,7 +13,16 @@ class CreateMessagesTable extends Migration
             $table->unsignedBigInteger('conversation_id');
             $table->unsignedBigInteger('user_id');
             $table->text('message')->nullable();
-            $table->enum('type', ['text', 'image', 'video', 'audio', 'file', 'location'])->default('text');
+            $table->enum('type', [   'text',
+            'image',
+            'video',
+            'audio',
+            'file',
+            'location',
+            'call_started',
+            'call_ended',
+            'call_missed',
+            'system'])->default('text');
             $table->json('metadata')->nullable(); // Store file info, dimensions, etc.
             $table->unsignedBigInteger('reply_to_message_id')->nullable();
             $table->boolean('is_edited')->default(false);

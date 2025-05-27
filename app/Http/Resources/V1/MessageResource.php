@@ -41,8 +41,18 @@ class MessageResource extends JsonResource
             // 'reader_timezone_used' => $reader ? $reader->getTimezone() : config('app.timezone', 'UTC'), // For debugging
         ];
 
+        // Handle call-related messages
+        if (in_array($this->type, ['call_started', 'call_ended', 'call_missed']) && $this->metadata) {
+            $data['call_info'] = [
+                'call_id' => $this->metadata['call_id'] ?? null,
+                'call_type' => $this->metadata['call_type'] ?? null,
+                'duration' => $this->metadata['duration'] ?? null,
+                'formatted_duration' => $this->metadata['formatted_duration'] ?? null,
+            ];
+        }
+
         // Add file information if message has metadata
-        if ($this->metadata) {
+        if ($this->metadata && !in_array($this->type, ['call_started', 'call_ended', 'call_missed'])) {
             $data['file'] = $this->formatFileData($this->metadata, $this->type);
         }
 

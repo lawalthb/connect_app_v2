@@ -779,4 +779,28 @@ public function profileUploads()
     {
         return $this->convertToUserTimezone($date)->diffForHumans();
     }
+
+    /**
+     * Get calls initiated by this user
+     */
+    public function initiatedCalls()
+    {
+        return $this->hasMany(Call::class, 'initiated_by');
+    }
+
+    /**
+     * Get call participations
+     */
+    public function callParticipations()
+    {
+        return $this->hasMany(CallParticipant::class);
+    }
+
+    /**
+     * Get calls this user participated in
+     */
+    public function calls()
+    {
+        return $this->hasManyThrough(Call::class, CallParticipant::class, 'user_id', 'id', 'id', 'call_id');
+    }
 }
