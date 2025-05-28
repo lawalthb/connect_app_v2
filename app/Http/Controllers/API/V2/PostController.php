@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\API\V2;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\V1\StorePostRequest;
-use App\Http\Requests\V1\UpdatePostRequest;
-use App\Http\Requests\V1\StoreCommentRequest;
+use App\Http\Requests\StorePostRequest;
+use App\Http\Requests\UpdatePostRequest;
+use App\Http\Requests\StoreCommentRequest;
 use App\Models\Post;
 use App\Models\PostLike;
 use App\Models\PostComment;

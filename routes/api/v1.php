@@ -69,22 +69,26 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('user/{id}/social-circles', [SocialCircleController::class, 'getUserSocialCircles']);
 
     // Posts
-    Route::get('posts', [PostController::class, 'index']);
-    Route::post('posts', [PostController::class, 'store']);
-    Route::get('posts/{id}', [PostController::class, 'show']);
-    Route::delete('posts/{id}', [PostController::class, 'destroy']);
-    Route::get('user/posts', [PostController::class, 'userPosts']);
-    Route::get('user/{id}/posts', [PostController::class, 'getUserPosts']);
-    Route::get('feed', [PostController::class, 'feed']);
+    Route::prefix('posts')->group(function () {
+        Route::get('/feed', [PostController::class, 'getFeed']);
+        Route::get('/scheduled', [PostController::class, 'getScheduledPosts']);
+        Route::get('/user/{userId?}', [PostController::class, 'getUserPosts']);
+        Route::post('/', [PostController::class, 'store']);
+        Route::get('/{post}', [PostController::class, 'show']);
+        Route::put('/{post}', [PostController::class, 'update']);
+        Route::delete('/{post}', [PostController::class, 'destroy']);
 
-    // Post Likes
-    Route::post('posts/{id}/like', [PostController::class, 'like']);
-    Route::get('posts/{id}/likes', [PostController::class, 'getLikes']);
+        // Post interactions
+        Route::post('/{post}/react', [PostController::class, 'toggleReaction']);
+        Route::post('/{post}/comments', [PostController::class, 'addComment']);
+        Route::get('/{post}/comments', [PostController::class, 'getComments']);
+        Route::post('/{post}/report', [PostController::class, 'reportPost']);
+        Route::post('/{post}/share', [PostController::class, 'sharePost']);
 
-    // Comments
-    Route::get('posts/{id}/comments', [CommentController::class, 'getPostComments']);
-    Route::post('posts/{id}/comments', [CommentController::class, 'store']);
-    Route::post('comments/{id}/reply', [CommentController::class, 'reply']);
+        // Post management
+        Route::post('/{post}/publish', [PostController::class, 'publishScheduledPost']);
+        Route::get('/{post}/analytics', [PostController::class, 'getPostAnalytics']);
+    });
 
     // Connections
     Route::post('connections/request', [ConnectionController::class, 'sendRequest']);
