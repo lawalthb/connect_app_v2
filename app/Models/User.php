@@ -803,4 +803,27 @@ public function profileUploads()
     {
         return $this->hasManyThrough(Call::class, CallParticipant::class, 'user_id', 'id', 'id', 'call_id');
     }
+
+    public function stories()
+    {
+        return $this->hasMany(Story::class);
+    }
+
+    public function activeStories()
+    {
+        return $this->hasMany(Story::class)->active()->orderBy('created_at', 'desc');
+    }
+
+    public function storyViews()
+    {
+        return $this->hasMany(StoryView::class, 'viewer_id');
+    }
+
+    public function isConnectedWith($userId): bool
+    {
+        // Implement based on your existing connection logic
+        // This should check if the users are connected/friends
+        // You might already have this method in your UserHelper or similar
+        return UserRequestsHelper::areUsersConnected($this->id, $userId);
+    }
 }

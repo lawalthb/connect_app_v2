@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -8,29 +9,23 @@ class StoryView extends Model
 {
     use HasFactory;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
-     */
     protected $fillable = [
-        'user_id',
         'story_id',
+        'viewer_id',
+        'viewed_at',
     ];
 
-    /**
-     * Get the user that owns the view.
-     */
-    public function user()
-    {
-        return $this->belongsTo(User::class);
-    }
+    protected $casts = [
+        'viewed_at' => 'datetime',
+    ];
 
-    /**
-     * Get the story that owns the view.
-     */
     public function story()
     {
         return $this->belongsTo(Story::class);
+    }
+
+    public function viewer()
+    {
+        return $this->belongsTo(User::class, 'viewer_id');
     }
 }
