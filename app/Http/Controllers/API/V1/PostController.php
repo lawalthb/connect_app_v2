@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Http\Controllers\API\V2;
+namespace App\Http\Controllers\API\V1;
 
-use App\Http\Controllers\Controller;
+use App\Http\Controllers\API\BaseController;
 use App\Http\Requests\V1\StorePostRequest;
 use App\Http\Requests\V1\UpdatePostRequest;
 use App\Http\Requests\V1\StoreCommentRequest;
@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
-class PostController extends Controller
+class PostController extends BaseController
 {
     protected $successStatus = 200;
     protected $mediaService;

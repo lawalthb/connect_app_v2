@@ -5,7 +5,12 @@ namespace App\Services;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Intervention\Image\Facades\Image;
+use Intervention\Image\ImageManager;
+use Intervention\Image\Drivers\Gd\Driver as GdDriver;
+use Intervention\Image\Encoders\JpegEncoder;
+use Intervention\Image\Encoders\PngEncoder;
+use Intervention\Image\Encoders\GifEncoder;
+use Intervention\Image\Encoders\WebpEncoder;
 use FFMpeg\FFMpeg;
 use FFMpeg\Format\Video\X264;
 use Illuminate\Support\Facades\Log;
@@ -13,12 +18,14 @@ use Illuminate\Support\Facades\Log;
 class MediaProcessingService
 {
     protected $s3Disk;
+    protected $imageManager;
     protected $allowedImageTypes = ['jpeg', 'jpg', 'png', 'gif', 'webp'];
     protected $allowedVideoTypes = ['mp4', 'mov', 'avi', 'wmv', 'flv', 'webm'];
 
     public function __construct()
     {
         $this->s3Disk = Storage::disk('s3');
+        $this->imageManager = new ImageManager(new GdDriver());
     }
 
     /**
@@ -46,7 +53,7 @@ class MediaProcessingService
 
         try {
             if ($type === 'image') {
-                $result = array_merge($result, $this->processImage($file, $basePath, $filename));
+                $result = array_merge($result, $this->processImage($file, $basePath, $filename, $fileExtension));
             } elseif ($type === 'video') {
                 $result = array_merge($result, $this->processVideo($file, $basePath, $filename));
             } else {
@@ -70,19 +77,24 @@ class MediaProcessingService
     /**
      * Process image file
      */
-    protected function processImage(UploadedFile $file, string $basePath, string $filename): array
+    protected function processImage(UploadedFile $file, string $basePath, string $filename, string $extension): array
     {
-        $image = Image::make($file);
+        $image = $this->imageManager->read($file->getPathname()); // Reads image and auto-orients
         $originalWidth = $image->width();
         $originalHeight = $image->height();
 
-        // Compress and resize original
-        $image->orientate(); // Fix orientation based on EXIF data
-
         // Upload original (compressed)
         $originalPath = "{$basePath}/original/{$filename}";
-        $compressedOriginal = $image->encode('jpg', 85);
-        $this->s3Disk->put($originalPath, $compressedOriginal->__toString());
+
+        // Encode based on original extension or default to JPEG
+        $encodedOriginal = match(strtolower($extension)) {
+            'png' => $image->encode(new PngEncoder()),
+            'gif' => $image->encode(new GifEncoder()),
+            'webp' => $image->encode(new WebpEncoder(quality: 85)),
+            'jpg', 'jpeg' => $image->encode(new JpegEncoder(quality: 85)),
+            default => $image->encode(new JpegEncoder(quality: 85)) // Fallback
+        };
+        $this->s3Disk->put($originalPath, $encodedOriginal->toString());
 
         // Create different sizes
         $compressedVersions = [];
@@ -93,12 +105,21 @@ class MediaProcessingService
             'large' => ['width' => 1200, 'height' => 1200],
         ];
 
-        foreach ($sizes as $sizeName => $dimensions) {
-            $resizedImage = $image->fit($dimensions['width'], $dimensions['height']);
-            $resizedPath = "{$basePath}/{$sizeName}/{$filename}";
-            $resizedCompressed = $resizedImage->encode('jpg', 80);
+        // Determine the extension for resized images (e.g., always jpg for thumbnails, or keep original format)
+        $resizedExtension = 'jpg';
+        $resizedFilenameBase = pathinfo($filename, PATHINFO_FILENAME);
 
-            $this->s3Disk->put($resizedPath, $resizedCompressed->__toString());
+        foreach ($sizes as $sizeName => $dimensions) {
+            // Clone the image object to avoid modifying the original in loop
+            $resizedImage = clone $image;
+            $resizedImage->cover($dimensions['width'], $dimensions['height']); // Use cover or fit
+
+            $resizedSpecificFilename = $resizedFilenameBase . '.' . $resizedExtension;
+            $resizedPath = "{$basePath}/{$sizeName}/{$resizedSpecificFilename}";
+
+            $resizedCompressed = $resizedImage->encode(new JpegEncoder(quality: 80));
+
+            $this->s3Disk->put($resizedPath, $resizedCompressed->toString());
             $compressedVersions[$sizeName] = $this->s3Disk->url($resizedPath);
         }
 
@@ -157,14 +178,22 @@ class MediaProcessingService
     protected function generateVideoThumbnail(UploadedFile $file, string $basePath, string $filename): ?string
     {
         try {
-            // This is a simplified version - you'd use FFMpeg for real implementation
             $thumbnailFilename = pathinfo($filename, PATHINFO_FILENAME) . '_thumb.jpg';
             $thumbnailPath = "{$basePath}/thumbnails/{$thumbnailFilename}";
 
-            // Here you would use FFMpeg to extract frame at 1 second
-            // For now, return null or implement based on your needs
+            // Placeholder for FFMpeg logic
+            // $ffmpeg = FFMpeg::create([...]); // Configure FFMpeg
+            // $video = $ffmpeg->open($file->getPathname());
+            // $frame = $video->frame(FFMpeg\Coordinate\TimeCode::fromSeconds(1));
+            // $tempThumbnailPath = tempnam(sys_get_temp_dir(), 'thumb') . '.jpg';
+            // $frame->save($tempThumbnailPath);
+            // $this->s3Disk->put($thumbnailPath, file_get_contents($tempThumbnailPath));
+            // unlink($tempThumbnailPath);
 
-            return $thumbnailPath;
+            // For now, returning the path, assuming it will be generated
+            // If FFMpeg is not set up, you might want to return null or handle it
+            // $this->s3Disk->put($thumbnailPath, ''); // Example: Put an empty file or placeholder
+            return $thumbnailPath; // Or null if not implemented
         } catch (\Exception $e) {
             Log::warning('Thumbnail generation failed', ['file' => $filename, 'error' => $e->getMessage()]);
             return null;
@@ -176,8 +205,16 @@ class MediaProcessingService
      */
     protected function getVideoInfo(UploadedFile $file): array
     {
-        // This would use FFProbe to get video information
-        // Simplified for now
+        // Placeholder for FFProbe logic
+        // $ffmpeg = FFMpeg::create([...]);
+        // $ffprobe = $ffmpeg->getFFProbe();
+        // $format = $ffprobe->format($file->getPathname());
+        // $stream = $ffprobe->streams($file->getPathname())->videos()->first();
+        // return [
+        //     'width' => $stream->get('width'),
+        //     'height' => $stream->get('height'),
+        //     'duration' => (int) round($format->get('duration')),
+        // ];
         return [
             'width' => null,
             'height' => null,
@@ -219,7 +256,7 @@ class MediaProcessingService
     public function deleteMedia(array $filePaths): void
     {
         foreach ($filePaths as $path) {
-            if ($path) {
+            if ($path && $this->s3Disk->exists($path)) {
                 $this->s3Disk->delete($path);
             }
         }
