@@ -98,13 +98,23 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('connections/requests', [ConnectionController::class, 'getIncomingRequests']);
 
     // Stories
-    Route::post('stories', [StoryController::class, 'store']);
-    Route::get('stories', [StoryController::class, 'userStories']);
-    Route::get('stories/user/{id}', [StoryController::class, 'getUserStories']);
-    Route::get('stories/feed', [StoryController::class, 'feed']);
-    Route::delete('stories/{id}', [StoryController::class, 'destroy']);
-    Route::post('stories/{id}/view', [StoryController::class, 'markAsViewed']);
+    Route::prefix('stories')->group(function () {
+        Route::post('/', [StoryController::class, 'store']);
+        Route::get('/feed', [StoryController::class, 'feed']);
+        Route::get('/my-stories', [StoryController::class, 'myStories']);
+        Route::get('/archive', [StoryController::class, 'archive']);
 
+        Route::prefix('{story}')->group(function () {
+            Route::get('/', [StoryController::class, 'show']);
+            Route::delete('/', [StoryController::class, 'destroy']);
+            Route::post('/view', [StoryController::class, 'markAsViewed']);
+            Route::get('/viewers', [StoryController::class, 'getViewers']);
+            Route::post('/reply', [StoryController::class, 'reply']);
+            Route::get('/replies', [StoryController::class, 'getReplies']);
+        });
+    });
+ // User stories
+ Route::get('users/{user}/stories', [StoryController::class, 'getUserStories']);
     // Search
     Route::get('search/users', [SearchController::class, 'searchUsers']);
     Route::get('search/posts', [SearchController::class, 'searchPosts']);
