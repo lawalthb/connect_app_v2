@@ -9,10 +9,11 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Carbon\Carbon;
+use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
-    use HasApiTokens, HasFactory, Notifiable, SoftDeletes;
+    use HasApiTokens, HasFactory, Notifiable, SoftDeletes, HasRoles;
 
     /**
      * The attributes that are mass assignable.
@@ -819,11 +820,94 @@ public function profileUploads()
         return $this->hasMany(StoryView::class, 'viewer_id');
     }
 
-    public function isConnectedWith($userId): bool
+    /**
+     * Connection related relationships
+     */
+    public function sentRequests()
     {
-        // Implement based on your existing connection logic
-        // This should check if the users are connected/friends
-        // You might already have this method in your UserHelper or similar
-        return UserRequestsHelper::areUsersConnected($this->id, $userId);
+        return $this->hasMany(UserRequest::class, 'sender_id');
+    }
+
+    public function receivedRequests()
+    {
+        return $this->hasMany(UserRequest::class, 'receiver_id');
+    }
+
+    public function connections()
+    {
+        return $this->belongsToMany(User::class, 'user_requests', 'sender_id', 'receiver_id')
+                    ->wherePivot('status', 'accepted')
+                    ->wherePivot('sender_status', 'accepted')
+                    ->wherePivot('receiver_status', 'accepted')
+                    ->withPivot(['status', 'sender_status', 'receiver_status', 'created_at']);
+    }
+
+    public function likesGiven()
+    {
+        return $this->hasMany(UserLike::class, 'user_id');
+    }
+
+    public function likesReceived()
+    {
+        return $this->hasMany(UserLike::class, 'liked_user_id');
+    }
+
+    public function swipeStats()
+    {
+        return $this->hasMany(UserSwipe::class);
+    }
+
+    public function profileImages()
+    {
+        return $this->hasMany(ProfileMultiUpload::class)->where('deleted_flag', 'N');
+    }
+
+    // public function socialCircles()
+    // {
+    //     return $this->belongsToMany(SocialCircle::class, 'user_social_circles', 'user_id', 'social_id')
+    //                 ->where('deleted_flag', 'N');
+    // }
+
+    /**
+     * Check if user is connected to another user
+     */
+    public function isConnectedTo($userId): bool
+    {
+        return UserRequest::where(function ($query) use ($userId) {
+            $query->where(['sender_id' => $this->id, 'receiver_id' => $userId])
+                  ->orWhere(['sender_id' => $userId, 'receiver_id' => $this->id]);
+        })
+        ->where('status', 'accepted')
+        ->where('sender_status', 'accepted')
+        ->where('receiver_status', 'accepted')
+        ->exists();
+    }
+
+    /**
+     * Check if user has liked another user
+     */
+    public function hasLiked($userId): bool
+    {
+        return $this->likesGiven()
+                    ->where('liked_user_id', $userId)
+                    ->where('is_active', true)
+                    ->exists();
+    }
+
+    /**
+     * Get connection status with another user
+     */
+    public function getConnectionStatusWith($userId): string
+    {
+        $request = UserRequest::where(['sender_id' => $this->id, 'receiver_id' => $userId])->first();
+        $reverseRequest = UserRequest::where(['sender_id' => $userId, 'receiver_id' => $this->id])->first();
+
+        if ($request) {
+            return $request->status;
+        } elseif ($reverseRequest) {
+            return $reverseRequest->status === 'pending' ? 'received_request' : $reverseRequest->status;
+        }
+
+        return 'none';
     }
 }

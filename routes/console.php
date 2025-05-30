@@ -11,4 +11,4 @@ Artisan::command('inspire', function () {
 // to publish scheduled posts
 Schedule::command('posts:publish-scheduled')->everyMinute();
     // Clean up expired stories every hour
-    $schedule->command('stories:cleanup')->hourly();
+    Schedule::command('stories:cleanup')->hourly();

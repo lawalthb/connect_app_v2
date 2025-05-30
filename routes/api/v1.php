@@ -90,12 +90,41 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{post}/analytics', [PostController::class, 'getPostAnalytics']);
     });
 
+    // Discovery & User Management
+    Route::prefix('users')->group(function () {
+        // User details and stats (no rate limit needed)
+        Route::get('/{id}/details', [ConnectionController::class, 'getUserDetailsById']);
+        Route::get('/stats', [ConnectionController::class, 'getUserStats']);
+        Route::get('/swipe-stats', [ConnectionController::class, 'getSwipeStats']);
+
+        // Discovery with rate limiting
+        Route::middleware(['swipe.limit'])->group(function () {
+            Route::post('/discover', [ConnectionController::class, 'getUsersBySocialCircle']);
+        });
+
+        // User likes (with rate limiting since these count as swipes)
+        Route::middleware(['swipe.limit'])->group(function () {
+            Route::post('/{id}/like', [ConnectionController::class, 'likeUser']);
+        });
+
+        // These don't need rate limiting
+        Route::get('/likes/received', [ConnectionController::class, 'getUsersWhoLikedMe']);
+        Route::get('/matches', [ConnectionController::class, 'getMutualMatches']);
+    });
+
     // Connections
-    Route::post('connections/request', [ConnectionController::class, 'sendRequest']);
-    Route::post('connections/request/{id}/respond', [ConnectionController::class, 'respondToRequest']);
-    Route::post('connections/{id}/disconnect', [ConnectionController::class, 'disconnect']);
-    Route::get('connections', [ConnectionController::class, 'getConnections']);
-    Route::get('connections/requests', [ConnectionController::class, 'getIncomingRequests']);
+    Route::prefix('connections')->group(function () {
+        // Connection requests with rate limiting (since these are swipes)
+        Route::middleware(['swipe.limit'])->group(function () {
+            Route::post('/request', [ConnectionController::class, 'sendRequest']);
+        });
+
+        // These don't need rate limiting
+        Route::get('/requests', [ConnectionController::class, 'getIncomingRequests']);
+        Route::post('/request/{id}/respond', [ConnectionController::class, 'respondToRequest']);
+        Route::get('/', [ConnectionController::class, 'getConnections']);
+        Route::post('/{id}/disconnect', [ConnectionController::class, 'disconnect']);
+    });
 
     // Stories
     Route::prefix('stories')->group(function () {
@@ -113,8 +142,10 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/replies', [StoryController::class, 'getReplies']);
         });
     });
- // User stories
- Route::get('users/{user}/stories', [StoryController::class, 'getUserStories']);
+
+    // User stories
+    Route::get('users/{user}/stories', [StoryController::class, 'getUserStories']);
+
     // Search
     Route::get('search/users', [SearchController::class, 'searchUsers']);
     Route::get('search/posts', [SearchController::class, 'searchPosts']);
@@ -153,8 +184,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/send', [MessageController::class, 'sendDirectMessage']); // For quick messaging
     });
 
-
-     //Call routes
+    // Call routes
     Route::prefix('calls')->group(function () {
         // Call management
         Route::post('initiate', [CallController::class, 'initiate']);
@@ -171,7 +201,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('{call}/participants/{user}/kick', [CallController::class, 'kickParticipant']);
     });
 
-    // Test service - I will remove this in production
+    // Test service - Remove this in production
     Route::get('test-agora', function () {
         return \App\Helpers\AgoraHelper::testTokenGeneration();
     });
@@ -184,6 +214,4 @@ Route::middleware('auth:sanctum')->group(function () {
             'publisher'
         );
     });
-
-
 });
