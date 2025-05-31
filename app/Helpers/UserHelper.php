@@ -205,22 +205,9 @@ class UserHelper
     public static function getUserDailySwipeLimit($userId)
     {
         try {
-            // Check user subscriptions
-            $userSubscriptions = UserSubscriptionHelper::getByUserId($userId);
-
-            // Unlimited subscription (subscription_id: 6)
-            if (in_array('6', $userSubscriptions)) {
+            // Check if user has unlimited access
+            if (UserSubscriptionHelper::hasUnlimitedAccess($userId)) {
                 return 999999; // Unlimited
-            }
-
-            // Premium subscription (subscription_id: 8)
-            if (in_array('8', $userSubscriptions)) {
-                return 100;
-            }
-
-            // Travel subscription (subscription_id: 4)
-            if (in_array('4', $userSubscriptions)) {
-                return 100;
             }
 
             // Free user

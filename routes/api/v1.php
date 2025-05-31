@@ -156,12 +156,30 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('notifications/{id}/read', [NotificationController::class, 'markAsRead']);
     Route::post('notifications/read-all', [NotificationController::class, 'markAllAsRead']);
 
-    // Subscriptions
-    Route::get('subscriptions', [SubscriptionController::class, 'index']);
-    Route::post('subscriptions', [SubscriptionController::class, 'subscribe']);
-    Route::post('subscriptions/{id}/cancel', [SubscriptionController::class, 'cancel']);
-    Route::get('subscriptions/restore', [SubscriptionController::class, 'restore']);
-    Route::post('subscriptions/boost', [SubscriptionController::class, 'activateBoost']);
+    // Subscription routes
+    Route::prefix('subscriptions')->group(function () {
+        // Public routes
+        Route::get('/', [SubscriptionController::class, 'index']);
+
+        // Protected routes
+        Route::middleware('auth:api')->group(function () {
+            Route::get('/user', [SubscriptionController::class, 'userSubscriptions']);
+            Route::get('/features', [SubscriptionController::class, 'getFeatures']);
+
+            // Payment routes
+            Route::post('/stripe/initialize', [SubscriptionController::class, 'initializeStripePayment']);
+            Route::post('/nomba/initialize', [SubscriptionController::class, 'initializeNombaPayment']);
+            Route::post('/verify', [SubscriptionController::class, 'verifyPayment']);
+
+            // Subscription management
+            Route::post('/{id}/cancel', [SubscriptionController::class, 'cancel']);
+            Route::post('/restore', [SubscriptionController::class, 'restore']);
+            Route::post('/boost/activate', [SubscriptionController::class, 'activateBoost']);
+        });
+
+        // Webhook routes (no auth needed)
+        Route::post('/nomba/callback', [SubscriptionController::class, 'handleNombaCallback']);
+    });
 
     // Messaging Routes
     Route::prefix('conversations')->group(function () {
