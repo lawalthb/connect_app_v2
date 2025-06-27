@@ -146,10 +146,23 @@ Route::middleware('auth:sanctum')->group(function () {
     // User stories
     Route::get('users/{user}/stories', [StoryController::class, 'getUserStories']);
 
-    // Search
-    Route::get('search/users', [SearchController::class, 'searchUsers']);
-    Route::get('search/posts', [SearchController::class, 'searchPosts']);
-    Route::get('discover/users', [SearchController::class, 'discoverUsers']);
+   // Search
+Route::prefix('search')->group(function () {
+    Route::get('users', [SearchController::class, 'searchUsers']);
+    Route::get('posts', [SearchController::class, 'searchPosts']);
+    Route::get('conversations', [SearchController::class, 'searchConversations']);
+    Route::get('messages', [SearchController::class, 'searchMessages']);
+    Route::get('social-circles', [SearchController::class, 'searchSocialCircles']);
+    Route::get('subscription-plans', [SearchController::class, 'searchSubscriptionPlans']);
+    Route::get('all', [SearchController::class, 'searchAll']); // Search across multiple content types
+});
+
+// Discovery
+Route::prefix('discover')->group(function () {
+    Route::get('users', [SearchController::class, 'discoverUsers']);
+    Route::get('trending-posts', [SearchController::class, 'discoverTrendingPosts']);
+    Route::get('suggested-connections', [SearchController::class, 'discoverSuggestedConnections']);
+});
 
     // Notifications
     Route::get('notifications', [NotificationController::class, 'index']);
@@ -161,8 +174,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Public routes
         Route::get('/', [SubscriptionController::class, 'index']);
 
-        // Protected routes
-        Route::middleware('auth:api')->group(function () {
+
             Route::get('/user', [SubscriptionController::class, 'userSubscriptions']);
             Route::get('/features', [SubscriptionController::class, 'getFeatures']);
 
@@ -175,7 +187,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{id}/cancel', [SubscriptionController::class, 'cancel']);
             Route::post('/restore', [SubscriptionController::class, 'restore']);
             Route::post('/boost/activate', [SubscriptionController::class, 'activateBoost']);
-        });
+ 
 
         // Webhook routes (no auth needed)
         Route::post('/nomba/callback', [SubscriptionController::class, 'handleNombaCallback']);

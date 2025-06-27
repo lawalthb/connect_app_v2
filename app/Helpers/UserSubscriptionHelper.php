@@ -5,6 +5,7 @@ namespace App\Helpers;
 use App\Models\UserSubscription;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class UserSubscriptionHelper
 {
@@ -80,10 +81,10 @@ class UserSubscriptionHelper
     public static function getActiveSubscriptionsWithDetails($userId)
     {
         return DB::table('user_subscriptions as us')
-            ->join('subscriptions as s', 'us.subscription_id', '=', 's.id')
+            ->join('subscribes as s', 'us.subscription_id', '=', 's.id')
             ->where('us.user_id', $userId)
             ->where('us.status', 'active')
-            ->where('us.expired_at', '>', now())
+            ->where('us.expires_at', '>', now())
             ->select([
                 'us.*',
                 's.name as subscription_name',
