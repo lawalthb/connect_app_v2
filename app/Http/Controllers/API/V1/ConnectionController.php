@@ -12,12 +12,14 @@ use App\Http\Resources\V1\SwipeStatsResource;
 use App\Helpers\UserHelper;
 use App\Helpers\UserRequestsHelper;
 use App\Helpers\UserLikeHelper;
+use App\Helpers\UserSubscriptionHelper;
+use App\Helpers\Utility;
+use App\Helpers\BlockUserHelper;
 use App\Models\User;
 use App\Models\UserRequest;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
-use App\Helpers\Utility;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -157,6 +159,7 @@ class ConnectionController extends Controller
      */
     public function getUsersBySocialCircle(Request $request)
     {
+
         $validator = Validator::make($request->all(), [
             'social_id' => 'required|array',
             'social_id.*' => 'integer',
@@ -179,7 +182,7 @@ class ConnectionController extends Controller
             $lastId = $request->input('last_id');
             $limit = $request->input('limit', 10);
 
-            $getData = UserHelper::getSocialCircleWiseUser($socialIds, $lastId, $countryId, $limit);
+            $getData = UserHelper::getSocialCircleWiseUsers2($socialIds, $lastId, $countryId, $limit);
 
             if (count($getData) != 0) {
                 $getData = Utility::convertString($getData);
@@ -228,12 +231,29 @@ class ConnectionController extends Controller
             $user = $request->user();
             $data = $request->validated();
 
+            \Log::info('Connection request received', [
+                'sender_id' => $user->id,
+                'data' => $data
+            ]);
+
             // Check if trying to send request to self
             if ($user->id == $data['user_id']) {
                 return response()->json([
                     'status' => 0,
                     'message' => 'Cannot send request to yourself'
                 ], 400);
+            }
+
+            // Check if target user exists
+            $targetUser = \App\Models\User::where('id', $data['user_id'])
+                                     ->where('deleted_flag', 'N')
+                                     ->first();
+
+            if (!$targetUser) {
+                return response()->json([
+                    'status' => 0,
+                    'message' => 'Target user not found'
+                ], 404);
             }
 
             // Send connection request
@@ -244,6 +264,8 @@ class ConnectionController extends Controller
                 $data['request_type'],
                 $data['message'] ?? null
             );
+
+            \Log::info('Connection request result', $result);
 
             if (!$result['success']) {
                 return response()->json([
@@ -260,20 +282,22 @@ class ConnectionController extends Controller
                 'message' => 'Connection request sent successfully',
                 'data' => [
                     'request_id' => $result['request_id'],
-                    'swipe_stats' => new SwipeStatsResource($swipeStats)
+                    'swipe_stats' => $swipeStats // Remove SwipeStatsResource for now
                 ]
             ], 201);
 
         } catch (\Exception $e) {
-            Log::error('Send connection request failed', [
+            \Log::error('Send connection request failed', [
                 'user_id' => $request->user()->id,
                 'target_user_id' => $data['user_id'] ?? null,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
 
             return response()->json([
                 'status' => 0,
-                'message' => 'Failed to send connection request'
+                'message' => 'Failed to send connection request',
+                'debug' => config('app.debug') ? $e->getMessage() : null
             ], 500);
         }
     }
@@ -605,23 +629,46 @@ class ConnectionController extends Controller
     {
         try {
             $user = $request->user();
+
+            if (!$user) {
+                return response()->json([
+                    'status' => 0,
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+
             $usersWhoLikedMe = UserLikeHelper::getUsersWhoLikedMe($user->id);
+
+            \Log::info('Users who liked me query result', [
+                'user_id' => $user->id,
+                'count' => $usersWhoLikedMe->count()
+            ]);
+
+            if ($usersWhoLikedMe->isEmpty()) {
+                return response()->json([
+                    'status' => 1,
+                    'message' => 'No users have liked you yet',
+                    'data' => []
+                ], $this->successStatus);
+            }
 
             return response()->json([
                 'status' => 1,
                 'message' => 'Users who liked you retrieved successfully',
-                'data' => UserProfileResource::collection($usersWhoLikedMe)
+                'data' => $usersWhoLikedMe->toArray() // Convert to array instead of using Resource for now
             ], $this->successStatus);
 
         } catch (\Exception $e) {
-            Log::error('Get users who liked me failed', [
-                'user_id' => $request->user()->id,
-                'error' => $e->getMessage()
+            \Log::error('Get users who liked me failed', [
+                'user_id' => $request->user()?->id ?? 'unknown',
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
 
             return response()->json([
                 'status' => 0,
-                'message' => 'Failed to retrieve users who liked you'
+                'message' => 'Failed to retrieve users who liked you',
+                'debug' => config('app.debug') ? $e->getMessage() : null
             ], 500);
         }
     }
@@ -639,23 +686,45 @@ class ConnectionController extends Controller
     {
         try {
             $user = $request->user();
+
+            if (!$user) {
+                return response()->json([
+                    'status' => 0,
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+
+            \Log::info("Getting mutual matches for user ID: " . $user->id);
+
             $mutualMatches = UserLikeHelper::getMutualLikes($user->id);
+
+            \Log::info("Mutual matches count: " . $mutualMatches->count());
+
+            if ($mutualMatches->isEmpty()) {
+                return response()->json([
+                    'status' => 1,
+                    'message' => 'No mutual matches found',
+                    'data' => []
+                ], $this->successStatus);
+            }
 
             return response()->json([
                 'status' => 1,
                 'message' => 'Mutual matches retrieved successfully',
-                'data' => UserProfileResource::collection($mutualMatches)
+                'data' => $mutualMatches->toArray() // Use toArray() for now instead of Resource
             ], $this->successStatus);
 
         } catch (\Exception $e) {
-            Log::error('Get mutual matches failed', [
-                'user_id' => $request->user()->id,
-                'error' => $e->getMessage()
+            \Log::error('Get mutual matches failed', [
+                'user_id' => $request->user()?->id ?? 'unknown',
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
 
             return response()->json([
                 'status' => 0,
-                'message' => 'Failed to retrieve mutual matches'
+                'message' => 'Failed to retrieve mutual matches',
+                'debug' => config('app.debug') ? $e->getMessage() : null
             ], 500);
         }
     }
@@ -675,5 +744,85 @@ class ConnectionController extends Controller
         }
 
         return 'none';
+    }
+
+    /**
+     * @OA\Get(
+     *     path="/api/v1/connections/requests",
+     *     summary="Get incoming connection requests",
+     *     tags={"Connections"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Response(response=200, description="Incoming requests retrieved successfully")
+     * )
+     */
+    public function getIncomingRequests(Request $request): JsonResponse
+    {
+        try {
+            $user = $request->user();
+
+            if (!$user) {
+                return response()->json([
+                    'status' => 0,
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+
+            // Get pending requests where current user is the receiver
+            $incomingRequests = UserRequestsHelper::getPendingRequests($user->id);
+
+            \Log::info('Getting incoming requests', [
+                'user_id' => $user->id,
+                'count' => $incomingRequests->count()
+            ]);
+
+            if ($incomingRequests->isEmpty()) {
+                return response()->json([
+                    'status' => 1,
+                    'message' => 'No incoming requests found',
+                    'data' => []
+                ], $this->successStatus);
+            }
+
+            // Transform the data for response
+            $transformedRequests = $incomingRequests->map(function ($request) {
+                return [
+                    'id' => $request->id,
+                    'sender_id' => $request->sender_id,
+                    'receiver_id' => $request->receiver_id,
+                    'social_id' => $request->social_id,
+                    'request_type' => $request->request_type,
+                    'message' => $request->message,
+                    'status' => $request->status,
+                    'created_at' => $request->created_at,
+                    'sender' => $request->sender ? [
+                        'id' => $request->sender->id,
+                        'name' => $request->sender->name,
+                        'username' => $request->sender->username,
+                        'profile' => $request->sender->profile,
+                        'profile_url' => $request->sender->profile_url,
+                        'bio' => $request->sender->bio ?? ''
+                    ] : null
+                ];
+            });
+
+            return response()->json([
+                'status' => 1,
+                'message' => 'Incoming requests retrieved successfully',
+                'data' => $transformedRequests
+            ], $this->successStatus);
+
+        } catch (\Exception $e) {
+            \Log::error('Get incoming requests failed', [
+                'user_id' => $request->user()?->id ?? 'unknown',
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'status' => 0,
+                'message' => 'Failed to retrieve incoming requests',
+                'debug' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
     }
 }

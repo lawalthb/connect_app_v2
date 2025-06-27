@@ -26,6 +26,8 @@ class CreateUserRequestsTable extends Migration
             $table->unique(['sender_id', 'receiver_id']); // Prevent duplicate requests
             $table->index(['receiver_id', 'status']);
             $table->index(['sender_id', 'created_at']);
+            $table->unsignedBigInteger('deleted_by')->nullable();
+            $table->char('deleted_flag', 1)->default('N')->comment('Y for deleted, N for active');
         });
     }
 

@@ -11,6 +11,7 @@ class CreateUserSwipesTable extends Migration
         Schema::create('user_swipes', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('user_id');
+            $table->unsignedBigInteger('updated_by')->nullable();
             $table->date('swipe_date');
             $table->integer('right_swipes')->default(0);
             $table->integer('left_swipes')->default(0);

@@ -79,11 +79,18 @@ class UserSubscriptionHelper
      */
     public static function getActiveSubscriptionsWithDetails($userId)
     {
-        return UserSubscription::with('subscription')
-            ->where('user_id', $userId)
-            ->where('expires_at', '>', Carbon::now())
-            ->where('deleted_flag', 'N')
-            ->where('status', 'active')
+        return DB::table('user_subscriptions as us')
+            ->join('subscriptions as s', 'us.subscription_id', '=', 's.id')
+            ->where('us.user_id', $userId)
+            ->where('us.status', 'active')
+            ->where('us.expired_at', '>', now())
+            ->select([
+                'us.*',
+                's.name as subscription_name',
+                's.slug',
+                's.description',
+                's.features'
+            ])
             ->get();
     }
 
@@ -128,11 +135,13 @@ class UserSubscriptionHelper
     /**
      * Get boost usage count for premium users
      */
-    public static function getCheckBoostPremium($parentId)
+    public static function getCheckBoostPremium($premiumSubscriptionId)
     {
-        return UserSubscription::where('parent_id', $parentId)
-            ->where('subscription_id', 4) // Boost subscription
-            ->where('deleted_flag', 'N')
+        return UserSubscription::where('parent_id', $premiumSubscriptionId)
+            ->where('subscription_id', 4) // Boost subscription ID
+            ->where('status', 'active')
+            ->whereMonth('created_at', date('m'))
+            ->whereYear('created_at', date('Y'))
             ->count();
     }
 
@@ -141,8 +150,10 @@ class UserSubscriptionHelper
      */
     public static function hasUnlimitedAccess($userId)
     {
-        $subscriptions = self::getByUserId($userId);
-        return in_array('2', $subscriptions) || in_array('3', $subscriptions); // Unlimited or Premium
+        $activeSubscriptions = self::getByUserId($userId);
+
+        // Check for unlimited or premium subscriptions
+        return in_array('6', $activeSubscriptions) || in_array('8', $activeSubscriptions);
     }
 
     /**
@@ -150,8 +161,10 @@ class UserSubscriptionHelper
      */
     public static function hasTravelAccess($userId)
     {
-        $subscriptions = self::getByUserId($userId);
-        return in_array('1', $subscriptions) || in_array('3', $subscriptions); // Travel or Premium
+        $activeSubscriptions = self::getByUserId($userId);
+
+        // Check for travel or premium subscriptions
+        return in_array('4', $activeSubscriptions) || in_array('8', $activeSubscriptions);
     }
 
     /**

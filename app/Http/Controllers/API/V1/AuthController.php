@@ -29,6 +29,7 @@ class AuthController extends BaseController
     protected $recaptchaService;
     protected $emailValidationService;
 
+
     public function __construct(
         AuthService $authService,
         RecaptchaService $recaptchaService,
@@ -54,9 +55,9 @@ public function register(RegisterRequest $request)
         // }
 
         // Check for suspicious email
-        if (!$this->emailValidationService->isValidEmail($request->email)) {
-            return $this->sendError('Invalid or suspicious email address.', null, 400);
-        }
+        // if (!$this->emailValidationService->isValidEmail($request->email)) {
+        //     return $this->sendError('Invalid or suspicious email address.', null, 400);
+        // }
 
         // Prepare registration data
         $registrationData = $request->validated();
@@ -210,8 +211,11 @@ private function addDefaultProfileUploads(User $user)
                 return $this->sendError('User not found', null, 404);
             }
 
-            // Here you would normally send the OTP via email
-            // For example: Mail::to($request->email)->send(new ResetPasswordOTPMail($otp));
+            // Get the user
+            $user = User::where('email', $request->email)->first();
+
+            // Send the OTP via email
+            Mail::to($request->email)->queue(new \App\Mail\ResetPasswordOTPMail($user, $otp));
 
             return $this->sendResponse(
                 'Password reset OTP has been sent to your email',
@@ -221,7 +225,6 @@ private function addDefaultProfileUploads(User $user)
             return $this->sendError('Failed to send reset OTP: ' . $e->getMessage(), null, 500);
         }
     }
-
     /**
      * Verify password reset OTP
      *

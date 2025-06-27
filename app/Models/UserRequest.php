@@ -4,26 +4,36 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Carbon\Carbon;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class UserRequest extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
+
+    protected $table = 'user_requests';
 
     protected $fillable = [
         'sender_id',
         'receiver_id',
-        'social_id',
+        'request_type',
+        'message',
         'status',
         'sender_status',
         'receiver_status',
-        'request_type',
-        'message',
-        'expires_at',
+        'social_id',
+        'responded_at',
+        'disconnected_at',
+        'created_by',
+        'updated_by',
+        'deleted_flag'
     ];
 
-    protected $casts = [
-        'expires_at' => 'datetime',
+    protected $dates = [
+        'responded_at',
+        'disconnected_at',
+        'created_at',
+        'updated_at',
+        'deleted_at'
     ];
 
     // Relationships

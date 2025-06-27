@@ -261,4 +261,118 @@ class MediaProcessingService
             }
         }
     }
+
+
+    /**
+ * Process and upload a file
+ *
+ * @param \Illuminate\Http\UploadedFile $file
+ * @param string $path
+ * @param string $type
+ * @return array
+ */
+public function processUpload(UploadedFile $file, string $path, string $type = null): array
+{
+    $fileExtension = strtolower($file->getClientOriginalExtension());
+    $mimeType = $file->getMimeType();
+    $originalName = $file->getClientOriginalName();
+
+    // Generate unique filename
+    $filename = $this->generateFilename($fileExtension);
+
+    // Determine file type if not provided
+    if (!$type) {
+        $type = $this->determineFileType($fileExtension, $mimeType);
+    }
+
+    $result = [
+        'type' => $type,
+        'original_name' => $originalName,
+        'file_size' => $file->getSize(),
+        'mime_type' => $mimeType,
+    ];
+
+    try {
+        // Upload the file to S3
+        $filePath = "{$path}/{$filename}";
+        $this->s3Disk->putFileAs($path, $file, $filename);
+
+        $result['file_path'] = $filePath;
+        $result['file_url'] = $this->s3Disk->url($filePath);
+
+        // For images, we can generate thumbnails
+        if ($type === 'image') {
+            try {
+                $image = $this->imageManager->read($file->getPathname());
+                $result['width'] = $image->width();
+                $result['height'] = $image->height();
+
+                // Generate thumbnail
+                $thumbnailPath = "{$path}/thumbnails/{$filename}";
+                $thumbnail = clone $image;
+                $thumbnail->cover(300, 300);
+                $thumbnailData = $thumbnail->encode(new JpegEncoder(quality: 80));
+                $this->s3Disk->put($thumbnailPath, $thumbnailData->toString());
+                $result['thumbnail_url'] = $this->s3Disk->url($thumbnailPath);
+            } catch (\Exception $e) {
+                // Log but continue if thumbnail generation fails
+                Log::warning('Thumbnail generation failed', [
+                    'file' => $originalName,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+
+        // For videos, we can generate a thumbnail frame
+        if ($type === 'video') {
+            $thumbnailPath = $this->generateVideoThumbnail($file, $path, $filename);
+            if ($thumbnailPath) {
+                $result['thumbnail_url'] = $this->s3Disk->url($thumbnailPath);
+            }
+        }
+
+        return $result;
+
+    } catch (\Exception $e) {
+        Log::error('File upload failed', [
+            'file' => $originalName,
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+
+        throw new \Exception('Failed to upload file: ' . $e->getMessage());
+    }
+}
+
+
+public function deleteFile(string $filePath): bool
+{
+    try {
+        if ($filePath && $this->s3Disk->exists($filePath)) {
+            $this->s3Disk->delete($filePath);
+
+            // Also try to delete thumbnail if it exists
+            $pathInfo = pathinfo($filePath);
+            $thumbnailPath = $pathInfo['dirname'] . '/thumbnails/' . $pathInfo['basename'];
+            if ($this->s3Disk->exists($thumbnailPath)) {
+                $this->s3Disk->delete($thumbnailPath);
+            }
+
+            Log::info('File deleted successfully', ['file_path' => $filePath]);
+            return true;
+        }
+
+        Log::warning('File not found for deletion', ['file_path' => $filePath]);
+        return false;
+
+    } catch (\Exception $e) {
+        Log::error('File deletion failed', [
+            'file_path' => $filePath,
+            'error' => $e->getMessage()
+        ]);
+
+        return false;
+    }
+}
+
 }

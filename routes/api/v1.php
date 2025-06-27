@@ -120,9 +120,9 @@ Route::middleware('auth:sanctum')->group(function () {
         });
 
         // These don't need rate limiting
-        Route::get('/requests', [ConnectionController::class, 'getIncomingRequests']);
+        Route::get('/requests', [ConnectionController::class, 'getConnectionRequests']);
         Route::post('/request/{id}/respond', [ConnectionController::class, 'respondToRequest']);
-        Route::get('/', [ConnectionController::class, 'getConnections']);
+        Route::get('/', [ConnectionController::class, 'getConnectedUsers']);
         Route::post('/{id}/disconnect', [ConnectionController::class, 'disconnect']);
     });
 
@@ -231,5 +231,15 @@ Route::middleware('auth:sanctum')->group(function () {
             3600,
             'publisher'
         );
+    });
+
+    // Add this temporarily for testing
+    Route::get('/test-userhelper', function() {
+        try {
+            $result = \App\Helpers\UserHelper::testMethod();
+            return response()->json(['message' => $result]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()]);
+        }
     });
 });

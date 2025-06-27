@@ -190,76 +190,8 @@ class StoryController extends Controller
         ]);
     }
 
-    /**
-     * Display the stories for a specific user.
-     *
-     * @param int $userId
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function getUserStories($userId)
-    {
-        $stories = Story::where('user_id', $userId)
-            ->where('created_at', '>=', now()->subDay())
-            ->latest()
-            ->get();
+    
 
-        return $this->sendResponse('User stories retrieved successfully', [
-            'stories' => StoryResource::collection($stories->load('user', 'taggedUsers')),
-        ]);
-    }
-
-    /**
-     * Mark a story as viewed.
-     *
-     * @param Request $request
-     * @param int $storyId
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function view(Request $request, $storyId)
-    {
-        $user = $request->user();
-        $story = Story::findOrFail($storyId);
-
-        // Check if the user has already viewed this story
-        $existingView = StoryView::where('user_id', $user->id)
-            ->where('story_id', $storyId)
-            ->first();
-
-        if (!$existingView) {
-            StoryView::create([
-                'user_id' => $user->id,
-                'story_id' => $storyId,
-            ]);
-        }
-
-        return $this->sendResponse('Story marked as viewed');
-    }
-
-    /**
-     * Delete a story.
-     *
-     * @param int $storyId
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function destroy($storyId)
-    {
-        $user = auth()->user();
-        $story = Story::findOrFail($storyId);
-
-        // Check if the authenticated user owns this story
-        if ($story->user_id !== $user->id) {
-            return $this->sendError('Unauthorized', null, 403);
-        }
-
-        // Delete file if exists
-        if ($story->story && $story->url && Storage::disk('public')->exists($story->story)) {
-            Storage::disk('public')->delete($story->story);
-        }
-
-        $story->delete();
-
-        return $this->sendResponse('Story deleted successfully');
-    }
 
     /**
      * @OA\Get(

@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\V1;
 
+use App\Models\UserProfileUpload;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 class UserProfileResource extends JsonResource
@@ -15,7 +16,7 @@ class UserProfileResource extends JsonResource
             'email' => $this->email,
             'bio' => $this->bio,
             'profile_image' => $this->profile_image_url,
-            'profile_images' => ProfileImageResource::collection($this->whenLoaded('profileImages')),
+           'profile_images' => UserProfileResource::collection($this->whenLoaded('profileImages')),
             'country' => $this->whenLoaded('country', [
                 'id' => $this->country->id,
                 'name' => $this->country->name,

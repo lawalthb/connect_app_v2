@@ -5,6 +5,7 @@ namespace App\Helpers;
 use App\Models\UserLike;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class UserLikeHelper
 {
@@ -18,10 +19,10 @@ class UserLikeHelper
 
         // Send notification
         if (isset($data['liked_user_id']) && isset($data['user_id'])) {
-            NotificationHelper::sendUserLikeNotification(
-                $data['liked_user_id'],
-                $data['user_id']
-            );
+          //  NotificationHelper::sendUserLikeNotification(
+              //  $data['liked_user_id'],
+           //     $data['user_id']
+         //   );
         }
 
         return $userLike->id;
@@ -64,15 +65,29 @@ class UserLikeHelper
 
     public static function getUsersWhoLikedMe($userId, $limit = 20)
     {
-        return UserLike::where('liked_user_id', $userId)
-                      ->where('is_active', true)
-                      ->with(['user' => function ($query) {
-                          $query->select('id', 'name', 'username', 'profile', 'profile_url', 'bio');
-                      }])
-                      ->orderBy('created_at', 'desc')
-                      ->limit($limit)
-                      ->get()
-                      ->pluck('user');
+        try {
+            // Get user IDs who liked this user
+            $likeRecords = UserLike::where('liked_user_id', $userId)
+                                  ->where('is_active', true)
+                                  ->pluck('user_id');
+
+            if ($likeRecords->isEmpty()) {
+                return collect([]); // Return empty collection
+            }
+
+            // Get the actual user records
+            $users = User::whereIn('id', $likeRecords)
+                        ->where('deleted_flag', 'N')
+                        ->select('id', 'name', 'username', 'profile', 'profile_url', 'bio')
+                        ->limit($limit)
+                        ->get();
+
+            return $users;
+
+        } catch (\Exception $e) {
+            \Log::error('UserLikeHelper::getUsersWhoLikedMe error: ' . $e->getMessage());
+            return collect([]); // Return empty collection on error
+        }
     }
 
     public static function hasUserLiked($userId, $likedUserId, $type = 'profile')

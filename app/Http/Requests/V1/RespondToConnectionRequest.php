@@ -14,7 +14,7 @@ class RespondToConnectionRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'request_id' => 'required|exists:user_requests,id',
+            'request_id' => 'required|exists:user_requests,sender_id',
             'action' => 'required|in:accept,reject,block',
             'message' => 'nullable|string|max:500',
         ];

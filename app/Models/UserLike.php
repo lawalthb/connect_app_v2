@@ -13,7 +13,6 @@ class UserLike extends Model
         'user_id',
         'liked_user_id',
         'type',
-        'photo_id',
         'is_active',
     ];
 
@@ -24,7 +23,7 @@ class UserLike extends Model
     // Relationships
     public function user()
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class, 'user_id');
     }
 
     public function likedUser()

@@ -859,7 +859,7 @@ public function profileUploads()
 
     public function profileImages()
     {
-        return $this->hasMany(ProfileMultiUpload::class)->where('deleted_flag', 'N');
+        return $this->hasMany(UserProfileUpload::class)->where('deleted_flag', 'N');
     }
 
     // public function socialCircles()

@@ -7,13 +7,50 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\URL;
 use App\Models\User;
-use App\Helpers\UserSwipeHelper;
+use App\Helpers\CountryHelper;
+use App\Helpers\PostHelper;
+
+use App\Helpers\UserRequestsHelper;
 use App\Helpers\UserSubscriptionHelper;
-use Carbon\Carbon;
+use App\Helpers\BlockUserHelper;
 use Auth;
+use Mail;
+use Carbon\Carbon;
 
 class UserHelper
 {
+    // Add this method at the top of your UserHelper class to test
+    public static function getSocialCircleWiseUsers2($socialId, $currentUserId, $lastId = null, $countryId = null)
+    {
+        $query = User::where('deleted_flag', 'N')
+        ->where('id', '!=', $currentUserId);
+
+if ($socialId) {
+$query->whereHas('socialCircles', function ($q) use ($socialId) {
+    $q->where('social_id', $socialId);
+});
+}
+
+if ($countryId) {
+$query->where('country_id', $countryId);
+}
+
+if ($lastId) {
+$query->where('id', '>', $lastId);
+}
+
+// Exclude already swiped users
+$swipedUserIds = UserRequestsHelper::getSwipedUserIds($currentUserId);
+if (!empty($swipedUserIds)) {
+$query->whereNotIn('id', $swipedUserIds);
+}
+
+return $query->with(['profileImages', 'country'])
+        ->orderBy('id')
+        ->limit(10)
+        ->get();
+}
+
     public static function getById($id)
     {
         return User::where('id', $id)
@@ -27,22 +64,22 @@ class UserHelper
         if (!$user) return null;
 
         // Get profile data
-        $allProfileData = ProfileMultiUploadHelper::getbyId($user->id);
+    //    $allProfileData = ProfileMultiUploadHelper::getbyId($user->id);
 
         // Get stats
         $totalConnections = UserRequestsHelper::getConnectionCount($user->id);
         $totalLikes = UserLikeHelper::getReceivedLikesCount($user->id);
-        $totalPosts = PostHelper::getTotalPostByUserId($user->id);
+     //   $totalPosts = PostHelper::getTotalPostByUserId($user->id);
 
         // Get country info
-        $countryData = CountryHelper::getById($user->country_id);
+      //  $countryData = CountryHelper::getById($user->country_id);
 
         // Add computed fields
         $user->total_connections = $totalConnections;
         $user->total_likes = $totalLikes;
-        $user->total_posts = $totalPosts;
-        $user->country_name = $countryData->country_name ?? '';
-        $user->multiple_profile = $allProfileData;
+       // $user->total_posts = $totalPosts;
+      //  $user->country_name = $countryData->country_name ?? '';
+      //  $user->multiple_profile = $allProfileData;
 
         return $user;
     }
@@ -80,6 +117,7 @@ class UserHelper
 
     public static function getSocialCircleWiseUsers($socialId, $currentUserId, $lastId = null, $countryId = null)
     {
+        return 4;
         $query = User::where('deleted_flag', 'N')
                     ->where('id', '!=', $currentUserId);
 
